@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChevronLeft, Pencil, Check, X, Trash2, Plus, CalendarDays, Users } from "lucide-react"
+import { ChevronLeft, Pencil, Check, X, Trash2, Plus, CalendarDays, Users, Camera } from "lucide-react"
 import { ROLE_BADGE, ROLE_LABELS } from "@/lib/category-colors"
 
 interface Team { id: string; name: string }
@@ -54,6 +54,25 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 }
 
+function resizeImage(file: File, maxSize: number): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / img.width, maxSize / img.height)
+        const canvas = document.createElement("canvas")
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL("image/jpeg", 0.85))
+      }
+      img.src = e.target!.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function UserProfile({ user: initUser, allTeams, sessionRole, sessionId, timezone }: Props) {
   const [user, setUser] = useState(initUser)
   const [editing, setEditing] = useState(false)
@@ -75,7 +94,19 @@ export default function UserProfile({ user: initUser, allTeams, sessionRole, ses
     role: user.role,
     social: { instagram: "", facebook: "", youtube: "", tiktok: "", twitter: "", website: "", ...(user.socialProfiles ?? {}) },
     teamIds: user.teamMemberships.map((m) => m.team.id),
+    avatar: user.avatar as string | null,
   })
+
+  const avatarRef = useRef<HTMLInputElement>(null)
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5MB"); return }
+    const dataUrl = await resizeImage(file, 256)
+    setForm((f) => ({ ...f, avatar: dataUrl }))
+    e.target.value = ""
+  }
 
   // Notes state
   const [notes, setNotes] = useState<ProfileNote[]>(user.profileNotes ?? [])
@@ -89,6 +120,7 @@ export default function UserProfile({ user: initUser, allTeams, sessionRole, ses
       address: user.address ?? "", gender: user.gender ?? "", role: user.role,
       social: { instagram: "", facebook: "", youtube: "", tiktok: "", twitter: "", website: "", ...(user.socialProfiles ?? {}) },
       teamIds: user.teamMemberships.map((m) => m.team.id),
+      avatar: user.avatar as string | null,
     })
     setEditing(false)
   }
@@ -108,6 +140,7 @@ export default function UserProfile({ user: initUser, allTeams, sessionRole, ses
         socialProfiles: Object.fromEntries(Object.entries(form.social).filter(([, v]) => v)),
         role: isAdmin ? form.role : undefined,
         teamIds: isAdmin ? form.teamIds : undefined,
+        avatar: form.avatar,
       }),
     })
     setSaving(false)
@@ -164,8 +197,11 @@ export default function UserProfile({ user: initUser, allTeams, sessionRole, ses
 
       {/* Profile card header */}
       <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold shrink-0">
-          {initials(user.name)}
+        <div className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold shrink-0 overflow-hidden">
+          {(editing ? form.avatar : user.avatar)
+            ? <img src={(editing ? form.avatar : user.avatar)!} alt={user.name} className="w-full h-full object-cover" />
+            : initials(user.name)
+          }
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold truncate">{user.name}</h1>
@@ -196,6 +232,36 @@ export default function UserProfile({ user: initUser, allTeams, sessionRole, ses
                 <CardTitle className="text-base">Edit Profile</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Avatar upload */}
+                <div className="flex items-center gap-4 pb-2 border-b">
+                  <div
+                    className="w-16 h-16 rounded-full bg-primary/10 text-primary relative cursor-pointer group overflow-hidden ring-2 ring-primary/20 shrink-0"
+                    onClick={() => avatarRef.current?.click()}
+                  >
+                    {form.avatar
+                      ? <img src={form.avatar} alt="" className="w-full h-full object-cover" />
+                      : <span className="absolute inset-0 flex items-center justify-center text-xl font-bold">{initials(user.name)}</span>
+                    }
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-full">
+                      <Camera className="h-5 w-5 text-white" />
+                    </div>
+                  </div>
+                  <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+                  <div>
+                    <p className="text-sm font-medium">Profile Photo</p>
+                    <p className="text-xs text-muted-foreground">Click to upload · JPEG, PNG · Max 5MB</p>
+                    {form.avatar && (
+                      <button
+                        type="button"
+                        className="text-xs text-destructive hover:underline mt-1"
+                        onClick={() => setForm((f) => ({ ...f, avatar: null }))}
+                      >
+                        Remove photo
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Name">
                     <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

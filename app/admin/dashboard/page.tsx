@@ -152,6 +152,10 @@ export default async function DashboardPage() {
         visible: w.visible,
         order: w.order,
         width: w.width,
+        gridX: w.gridX,
+        gridY: w.gridY,
+        gridW: w.gridW,
+        gridH: w.gridH,
       }))}
       userProfile={userProfile ? {
         id: userProfile.id,

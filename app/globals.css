@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "react-grid-layout/css/styles.css";
+@import "react-resizable/css/styles.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -123,4 +125,68 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* ── Dashboard grid resize handles — curved corner brackets ── */
+.react-resizable-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  background-image: none !important;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.react-grid-item:hover .react-resizable-handle {
+  opacity: 1;
+}
+.react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: none;
+}
+
+/* SE — bottom-right */
+.react-resizable-handle-se { bottom: 0; right: 0; cursor: se-resize; }
+.react-resizable-handle-se::after {
+  bottom: 5px; right: 5px;
+  border-bottom: 2px solid hsl(215 15% 52%);
+  border-right: 2px solid hsl(215 15% 52%);
+  border-bottom-right-radius: 0.55rem;
+}
+/* SW — bottom-left */
+.react-resizable-handle-sw { bottom: 0; left: 0; cursor: sw-resize; }
+.react-resizable-handle-sw::after {
+  bottom: 5px; left: 5px;
+  border-bottom: 2px solid hsl(215 15% 52%);
+  border-left: 2px solid hsl(215 15% 52%);
+  border-bottom-left-radius: 0.55rem;
+}
+/* NE — top-right */
+.react-resizable-handle-ne { top: 0; right: 0; cursor: ne-resize; }
+.react-resizable-handle-ne::after {
+  top: 5px; right: 5px;
+  border-top: 2px solid hsl(215 15% 52%);
+  border-right: 2px solid hsl(215 15% 52%);
+  border-top-right-radius: 0.55rem;
+}
+/* NW — top-left */
+.react-resizable-handle-nw { top: 0; left: 0; cursor: nw-resize; }
+.react-resizable-handle-nw::after {
+  top: 5px; left: 5px;
+  border-top: 2px solid hsl(215 15% 52%);
+  border-left: 2px solid hsl(215 15% 52%);
+  border-top-left-radius: 0.55rem;
+}
+
+.react-grid-item.react-draggable-dragging {
+  z-index: 50;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+}
+.react-grid-item.react-grid-placeholder {
+  background: hsl(215 20% 90%);
+  border-radius: 0.75rem;
+  opacity: 0.4;
 }

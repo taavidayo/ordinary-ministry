@@ -40,7 +40,7 @@ export default function ServiceRequestsWidget({ slots: initial, timezone }: Prop
   }
 
   return (
-    <Card>
+    <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <BellRing className="h-4 w-4" />
@@ -52,7 +52,7 @@ export default function ServiceRequestsWidget({ slots: initial, timezone }: Prop
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1 overflow-y-auto">
         {slots.length === 0 ? (
           <p className="text-sm text-muted-foreground">No pending requests.</p>
         ) : (

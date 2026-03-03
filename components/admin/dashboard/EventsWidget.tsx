@@ -30,14 +30,14 @@ function formatDateRange(start: string, end: string | null, timezone: string): s
 
 export default function EventsWidget({ events, timezone }: Props) {
   return (
-    <Card>
+    <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <CalendarCheck className="h-4 w-4" />
           Upcoming Events
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1 overflow-y-auto">
         {events.length === 0 ? (
           <p className="text-sm text-muted-foreground">No upcoming events.</p>
         ) : (

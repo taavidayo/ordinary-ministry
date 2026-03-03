@@ -50,7 +50,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const body = await req.json()
-  const { password, teamIds, role, birthday, socialProfiles, address, gender, ...rest } = body
+  const { password, teamIds, role, birthday, socialProfiles, address, gender, avatar, ...rest } = body
 
   const data: Record<string, unknown> = {}
 
@@ -65,6 +65,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (address !== undefined) data.address = address || null
     if (gender !== undefined) data.gender = gender || null
     if (socialProfiles !== undefined) data.socialProfiles = socialProfiles || null
+    if (avatar !== undefined) data.avatar = avatar || null
   }
 
   if (isLeader && !isAdmin && !isSelf) {

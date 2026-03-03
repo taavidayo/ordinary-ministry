@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -56,25 +55,24 @@ export default function AnnouncementsWidget({ announcements: initial, isAdmin, o
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Megaphone className="h-4 w-4" />
-          Announcements
-          {isAdmin && !adding && (
-            <button
-              onClick={() => setAdding(true)}
-              className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
-              title="New announcement"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b shrink-0">
+        <Megaphone className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-semibold">Announcements</span>
+        {isAdmin && !adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
+            title="New announcement"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5 space-y-3 max-h-56">
         {adding && (
-          <div className="border rounded-lg p-3 space-y-2 bg-gray-50">
+          <div className="border rounded-lg p-3 space-y-2 bg-muted/40">
             <Input
               placeholder="Title"
               value={title}
@@ -129,7 +127,7 @@ export default function AnnouncementsWidget({ announcements: initial, isAdmin, o
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

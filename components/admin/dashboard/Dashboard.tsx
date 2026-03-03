@@ -1,24 +1,7 @@
 "use client"
 
-import { useState, useCallback } from "react"
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragEndEvent,
-} from "@dnd-kit/core"
-import {
-  SortableContext,
-  useSortable,
-  rectSortingStrategy,
-  arrayMove,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import { SlidersHorizontal, GripVertical, Expand, Shrink, X, Megaphone } from "lucide-react"
+import { useState, useCallback, useRef } from "react"
+import { SlidersHorizontal, Megaphone, X, Move } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "sonner"
@@ -29,7 +12,14 @@ import TasksWidget, { TaskItem } from "./TasksWidget"
 import EventsWidget, { EventItem } from "./EventsWidget"
 import MyProfileWidget, { UserProfileData } from "./MyProfileWidget"
 
-// Only these widgets are draggable; announcements is pinned at top
+// react-grid-layout v1 uses CommonJS `export =`; require() avoids TS type issues
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const GridLayout = require("react-grid-layout")
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { WidthProvider } = require("react-grid-layout") as { WidthProvider: <T>(c: T) => T }
+const ResponsiveGridLayout = WidthProvider(GridLayout)
+type Layout = { i: string; x: number; y: number; w: number; h: number }
+
 const WIDGET_DEFS = [
   { id: "service-requests", label: "Service Requests" },
   { id: "upcoming-services", label: "Upcoming Services" },
@@ -39,13 +29,18 @@ const WIDGET_DEFS = [
 
 type WidgetId = typeof WIDGET_DEFS[number]["id"]
 
-interface WidgetRow { widgetId: string; visible: boolean; order: number; width: number }
+interface WidgetRow {
+  widgetId: string; visible: boolean; order: number; width: number
+  gridX: number; gridY: number; gridW: number; gridH: number
+}
 
 interface WidgetState {
   id: WidgetId
   visible: boolean
-  order: number
-  width: 1 | 2
+  gridX: number
+  gridY: number
+  gridW: number
+  gridH: number
 }
 
 interface Props {
@@ -67,62 +62,12 @@ function buildWidgets(rows: WidgetRow[]): WidgetState[] {
     return {
       id: d.id,
       visible: saved?.visible ?? true,
-      order: saved?.order ?? i,
-      width: ((saved?.width ?? 1) as 1 | 2),
+      gridX: saved?.gridX ?? (i % 2) * 6,
+      gridY: saved?.gridY ?? Math.floor(i / 2) * 4,
+      gridW: saved?.gridW ?? 6,
+      gridH: saved?.gridH ?? 4,
     }
-  }).sort((a, b) => a.order - b.order)
-}
-
-function SortableWidget({
-  widget,
-  editing,
-  onToggleWidth,
-  children,
-}: {
-  widget: WidgetState
-  editing: boolean
-  onToggleWidth: (id: WidgetId) => void
-  children: React.ReactNode
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: widget.id })
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
-        // Inline style for col-span — avoids Tailwind purge issues
-        gridColumn: widget.width === 2 ? "span 2" : "span 1",
-      }}
-    >
-      <div className="relative h-full">
-        {editing && (
-          <div className="absolute top-2 right-2 z-10 flex items-center gap-0.5 bg-white/95 border rounded-md shadow-sm px-1 py-0.5">
-            <button
-              {...attributes}
-              {...listeners}
-              className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground touch-none"
-              title="Drag to reorder"
-            >
-              <GripVertical className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => onToggleWidth(widget.id)}
-              className="p-1 text-muted-foreground hover:text-foreground"
-              title={widget.width === 1 ? "Expand to full width" : "Shrink to half width"}
-            >
-              {widget.width === 1
-                ? <Expand className="h-3.5 w-3.5" />
-                : <Shrink className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-        )}
-        {children}
-      </div>
-    </div>
-  )
+  })
 }
 
 export default function Dashboard({
@@ -141,36 +86,23 @@ export default function Dashboard({
   const [banner, setBanner] = useState<AnnouncementItem | null>(null)
   const [editing, setEditing] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
-  const [activeId, setActiveId] = useState<WidgetId | null>(null)
   const [saving, setSaving] = useState(false)
-
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const visible = widgets.filter((w) => w.visible)
 
-  function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as WidgetId)
-  }
+  // Always track the latest layout from react-grid-layout so stopEditing
+  // can read it synchronously, bypassing any pending setState batching.
+  const latestLayoutRef = useRef<Layout[]>([])
 
-  function handleDragEnd(event: DragEndEvent) {
-    setActiveId(null)
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    setWidgets((prev) => {
-      const visibleIds = prev.filter((w) => w.visible).map((w) => w.id)
-      const oldIdx = visibleIds.indexOf(active.id as WidgetId)
-      const newIdx = visibleIds.indexOf(over.id as WidgetId)
-      const reordered = arrayMove(visibleIds, oldIdx, newIdx)
-      return prev.map((w) => ({
-        ...w,
-        order: reordered.includes(w.id) ? reordered.indexOf(w.id) : w.order,
-      })).sort((a, b) => a.order - b.order)
-    })
-  }
-
-  function toggleWidth(id: WidgetId) {
+  function handleLayoutChange(newLayout: Layout[]) {
+    latestLayoutRef.current = newLayout
+    if (!editing) return
     setWidgets((prev) =>
-      prev.map((w) => w.id === id ? { ...w, width: w.width === 1 ? 2 : 1 } : w)
+      prev.map((w) => {
+        const item = newLayout.find((l) => l.i === w.id)
+        if (!item) return w
+        return { ...w, gridX: item.x, gridY: item.y, gridW: item.w, gridH: item.h }
+      })
     )
   }
 
@@ -187,8 +119,12 @@ export default function Dashboard({
         widgets: current.map((w) => ({
           widgetId: w.id,
           visible: w.visible,
-          order: w.order,
-          width: w.width,
+          order: 0,
+          width: 1,
+          gridX: w.gridX,
+          gridY: w.gridY,
+          gridW: w.gridW,
+          gridH: w.gridH,
         })),
       }),
     })
@@ -198,8 +134,17 @@ export default function Dashboard({
   }, [])
 
   function stopEditing() {
+    // Merge the latest react-grid-layout positions from the ref into widget state
+    // so we don't depend on setState batching order before persisting.
+    const latest = latestLayoutRef.current
+    const updatedWidgets = widgets.map((w) => {
+      const item = latest.find((l) => l.i === w.id)
+      if (!item) return w
+      return { ...w, gridX: item.x, gridY: item.y, gridW: item.w, gridH: item.h }
+    })
+    setWidgets(updatedWidgets)
     setEditing(false)
-    persistWidgets(widgets)
+    persistWidgets(updatedWidgets)
   }
 
   function handleNewAnnouncement(a: AnnouncementItem) {
@@ -207,9 +152,7 @@ export default function Dashboard({
     setBanner(a)
   }
 
-  const activeWidget = activeId ? widgets.find((w) => w.id === activeId) : null
-
-  function renderDraggableWidget(id: WidgetId) {
+  function renderWidget(id: WidgetId) {
     switch (id) {
       case "service-requests":  return <ServiceRequestsWidget slots={serviceRequests} timezone={timezone} />
       case "upcoming-services": return <UpcomingServicesWidget slots={upcomingServices} timezone={timezone} />
@@ -220,7 +163,7 @@ export default function Dashboard({
 
   return (
     <div className="space-y-4">
-      {/* Announcement banner — shows when admin posts a new one */}
+      {/* Announcement banner */}
       {banner && (
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
           <Megaphone className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
@@ -245,7 +188,7 @@ export default function Dashboard({
           ) : (
             <>
               <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                <GripVertical className="h-4 w-4 mr-1.5" /> Edit Layout
+                <Move className="h-4 w-4 mr-1.5" /> Edit Layout
               </Button>
               <Button variant="outline" size="sm" onClick={() => setCustomizeOpen(true)}>
                 <SlidersHorizontal className="h-4 w-4 mr-1.5" /> Widgets
@@ -255,42 +198,59 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* ── Pinned top row: My Profile (narrow) + Announcements (wide) ── */}
-      <div style={{ display: "grid", gridTemplateColumns: userProfile ? "280px 1fr" : "1fr", gap: "1rem" }}>
-        {userProfile && <MyProfileWidget user={userProfile} timezone={timezone} />}
-        <AnnouncementsWidget
-          announcements={announcements}
-          isAdmin={isAdmin}
-          onNew={handleNewAnnouncement}
-        />
+      {/* Edit mode hint */}
+      {editing && (
+        <p className="text-xs text-muted-foreground">
+          Drag any widget to reposition it · Drag the corner handles to resize
+        </p>
+      )}
+
+      {/* ── Pinned top strip: My Profile + Announcements integrated ── */}
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="flex flex-col sm:flex-row">
+          {userProfile && (
+            <div className="sm:w-72 shrink-0">
+              <MyProfileWidget user={userProfile} timezone={timezone} />
+            </div>
+          )}
+          <div className={userProfile ? "flex-1 min-w-0 border-t sm:border-t-0 sm:border-l" : "w-full"}>
+            <AnnouncementsWidget
+              announcements={announcements}
+              isAdmin={isAdmin}
+              onNew={handleNewAnnouncement}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* ── Draggable widget grid ── */}
+      {/* ── Free-form draggable widget grid ── */}
       {visible.length > 0 && (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
+        <ResponsiveGridLayout
+          layout={visible.map((w) => ({ i: w.id, x: w.gridX, y: w.gridY, w: w.gridW, h: w.gridH }))}
+          cols={12}
+          rowHeight={72}
+          isDraggable={editing}
+          isResizable={editing}
+          resizeHandles={["se", "sw", "ne", "nw"]}
+          margin={[16, 16]}
+          containerPadding={[0, 0]}
+          compactType="vertical"
+          onLayoutChange={handleLayoutChange}
+          draggableCancel="button,a,input,textarea,select,[role=button]"
+          style={{ minHeight: editing ? 200 : undefined }}
         >
-          <SortableContext items={visible.map((w) => w.id)} strategy={rectSortingStrategy}>
-            <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
-              {visible.map((w) => (
-                <SortableWidget key={w.id} widget={w} editing={editing} onToggleWidth={toggleWidth}>
-                  {renderDraggableWidget(w.id)}
-                </SortableWidget>
-              ))}
+          {visible.map((w) => (
+            <div
+              key={w.id}
+              className={editing
+                ? "rounded-xl ring-2 ring-primary/25 ring-offset-0 cursor-grab active:cursor-grabbing overflow-hidden"
+                : "overflow-hidden"
+              }
+            >
+              {renderWidget(w.id)}
             </div>
-          </SortableContext>
-
-          <DragOverlay>
-            {activeWidget && (
-              <div className="opacity-90 rotate-1 shadow-xl">
-                {renderDraggableWidget(activeWidget.id)}
-              </div>
-            )}
-          </DragOverlay>
-        </DndContext>
+          ))}
+        </ResponsiveGridLayout>
       )}
 
       {/* Widgets dialog */}
@@ -299,7 +259,7 @@ export default function Dashboard({
           <DialogHeader>
             <DialogTitle>Manage Widgets</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Choose which widgets to show.</p>
+          <p className="text-sm text-muted-foreground">Choose which widgets to show on your dashboard.</p>
           <ul className="space-y-2 mt-1">
             {WIDGET_DEFS.map((d) => {
               const w = widgets.find((x) => x.id === d.id)!

@@ -62,7 +62,7 @@ export default function TasksWidget({ tasks: initial }: Props) {
   const done = tasks.filter((t) => t.done)
 
   return (
-    <Card>
+    <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <CheckSquare className="h-4 w-4" />
@@ -72,7 +72,7 @@ export default function TasksWidget({ tasks: initial }: Props) {
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex-1 overflow-y-auto space-y-3">
         {/* Pending tasks */}
         {pending.length > 0 && (
           <ul className="space-y-1">

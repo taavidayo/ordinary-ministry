@@ -350,6 +350,10 @@ model DashboardWidget {
   visible  Boolean @default(true)
   order    Int     @default(0)
   width    Int     @default(1)
+  gridX    Int     @default(0)
+  gridY    Int     @default(0)
+  gridW    Int     @default(6)
+  gridH    Int     @default(4)
 
   @@unique([userId, widgetId])
 }

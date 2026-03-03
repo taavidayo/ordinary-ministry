@@ -21,14 +21,14 @@ interface Props {
 
 export default function UpcomingServicesWidget({ slots, timezone }: Props) {
   return (
-    <Card>
+    <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <CalendarDays className="h-4 w-4" />
           Upcoming Services
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1 overflow-y-auto">
         {slots.length === 0 ? (
           <p className="text-sm text-muted-foreground">No upcoming assignments.</p>
         ) : (

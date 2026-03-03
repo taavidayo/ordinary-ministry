@@ -3,6 +3,15 @@ export interface TimezoneOption {
   label: string
 }
 
+export function getUtcOffset(tz: string): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: tz,
+    timeZoneName: "shortOffset",
+  }).formatToParts(new Date())
+  const offset = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT"
+  return offset.replace("GMT", "UTC")
+}
+
 export const TIMEZONES: TimezoneOption[] = [
   // UTC
   { value: "UTC", label: "UTC — Coordinated Universal Time" },

@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Check, Plus, Trash2 } from "lucide-react"
-import { TIMEZONES } from "@/lib/timezones"
+import { TIMEZONES, getUtcOffset } from "@/lib/timezones"
 
 const ROLES = ["VISITOR", "MEMBER", "LEADER", "ADMIN"] as const
 const FEATURES = [
@@ -119,7 +119,7 @@ export default function SettingsManager({ settings: init }: { settings: Settings
               </SelectTrigger>
               <SelectContent className="max-h-72">
                 {TIMEZONES.map((tz) => (
-                  <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                  <SelectItem key={tz.value} value={tz.value}>({getUtcOffset(tz.value)}) {tz.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
