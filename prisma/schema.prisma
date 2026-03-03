@@ -1,0 +1,355 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  LEADER
+  MEMBER
+  VISITOR
+}
+
+enum ProgramItemType {
+  SONG
+  SERMON
+  PRAYER
+  ITEM
+  HEADER
+}
+
+model User {
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  passwordHash   String
+  role           Role     @default(MEMBER)
+  phone          String?
+  avatar         String?
+  birthday       DateTime?
+  address        String?
+  gender         String?
+  socialProfiles Json?
+  createdAt      DateTime @default(now())
+
+  teamMemberships  TeamMember[]
+  serviceSlots     ServiceSlot[]
+  songNotes        SongNote[]
+  profileNotes     ProfileNote[] @relation("profileUser")
+  authoredNotes    ProfileNote[] @relation("noteAuthor")
+  availabilities   Availability[]
+  updatedServices  Service[]     @relation("serviceUpdater")
+  announcements    Announcement[]
+  tasks            Task[]
+  dashboardWidgets DashboardWidget[]
+}
+
+model ProfileNote {
+  id        String   @id @default(cuid())
+  user      User     @relation("profileUser", fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  author    User     @relation("noteAuthor", fields: [authorId], references: [id])
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MinistrySetting {
+  id          String   @id @default("default")
+  name        String   @default("Ordinary Ministry")
+  logoUrl     String?
+  timezone    String   @default("UTC")
+  permissions Json?
+  updatedAt   DateTime @updatedAt
+}
+
+model Team {
+  id            String               @id @default(cuid())
+  name          String
+  description   String?
+  roles         TeamRole[]
+  members       TeamMember[]
+  serviceTeams  ServiceTeam[]
+  templateTeams ServiceTemplateTeam[]
+}
+
+model TeamRole {
+  id     String        @id @default(cuid())
+  name   String
+  needed Int           @default(0)
+  team   Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+  slots  ServiceSlot[]
+}
+
+model TeamMember {
+  id     String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+
+  @@unique([userId, teamId])
+}
+
+model Song {
+  id           String        @id @default(cuid())
+  title        String
+  author       String?
+  genre        String?
+  tags         String[]
+  createdAt    DateTime      @default(now())
+  arrangements Arrangement[]
+  programItems ProgramItem[]
+}
+
+model Arrangement {
+  id           String        @id @default(cuid())
+  name         String
+  chordproText String
+  song         Song          @relation(fields: [songId], references: [id], onDelete: Cascade)
+  songId       String
+  createdAt    DateTime      @default(now())
+  programItems ProgramItem[]
+  songNotes    SongNote[]
+}
+
+model ServiceCategory {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  color       String    @default("gray")
+  minRole     Role      @default(MEMBER)
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  services    Service[]
+}
+
+model ServiceSeries {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  createdAt   DateTime  @default(now())
+  services    Service[]
+}
+
+model Service {
+  id            String           @id @default(cuid())
+  title         String           @default("")
+  categoryId    String?
+  category      ServiceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  seriesId      String?
+  series        ServiceSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  date          DateTime
+  notes         String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  updatedById   String?
+  updatedBy     User?            @relation("serviceUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  times           ServiceTime[]
+  teams           ServiceTeam[]
+  scheduleEntries ServiceScheduleEntry[]
+}
+
+model ServiceTime {
+  id           String        @id @default(cuid())
+  service      Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  serviceId    String
+  label        String
+  startTime    String?
+  order        Int           @default(0)
+  items        ProgramItem[]
+  serviceTeams ServiceTeam[]
+}
+
+model ServiceScheduleEntry {
+  id        String   @id @default(cuid())
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  serviceId String
+  label     String
+  startTime String?
+  order     Int      @default(0)
+}
+
+model ProgramItem {
+  id            String          @id @default(cuid())
+  serviceTime   ServiceTime     @relation(fields: [serviceTimeId], references: [id], onDelete: Cascade)
+  serviceTimeId String
+  type          ProgramItemType
+  order         Int
+  name          String?
+  notes         String?
+  sermonPassage String?
+  song          Song?           @relation(fields: [songId], references: [id])
+  songId        String?
+  arrangement   Arrangement?    @relation(fields: [arrangementId], references: [id])
+  arrangementId String?
+  syncGroupId   String?
+}
+
+model ServiceTeam {
+  id            String       @id @default(cuid())
+  service       Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  serviceId     String
+  serviceTime   ServiceTime? @relation(fields: [serviceTimeId], references: [id], onDelete: SetNull)
+  serviceTimeId String?
+  team          Team         @relation(fields: [teamId], references: [id])
+  teamId        String
+  slots         ServiceSlot[]
+}
+
+model ServiceSlot {
+  id            String      @id @default(cuid())
+  serviceTeam   ServiceTeam @relation(fields: [serviceTeamId], references: [id], onDelete: Cascade)
+  serviceTeamId String
+  role          TeamRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        String
+  user          User?       @relation(fields: [userId], references: [id])
+  userId        String?
+  status        String      @default("PENDING")
+  rehearsal     Boolean     @default(false)
+  notes         String?
+}
+
+model Availability {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  date      DateTime @db.Date
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
+}
+
+model ServiceTemplate {
+  id            String                @id @default(cuid())
+  name          String
+  description   String?
+  createdAt     DateTime              @default(now())
+  times         ServiceTemplateTime[]
+  templateTeams ServiceTemplateTeam[]
+}
+
+model ServiceTemplateTime {
+  id            String                @id @default(cuid())
+  template      ServiceTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId    String
+  label         String
+  startTime     String?
+  order         Int                   @default(0)
+  items         ServiceTemplateItem[]
+  templateTeams ServiceTemplateTeam[]
+}
+
+model ServiceTemplateItem {
+  id             String              @id @default(cuid())
+  templateTime   ServiceTemplateTime @relation(fields: [templateTimeId], references: [id], onDelete: Cascade)
+  templateTimeId String
+  type           ProgramItemType
+  name           String?
+  order          Int                 @default(0)
+}
+
+model ServiceTemplateTeam {
+  id             String               @id @default(cuid())
+  template       ServiceTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId     String
+  team           Team                 @relation(fields: [teamId], references: [id])
+  teamId         String
+  templateTime   ServiceTemplateTime? @relation(fields: [templateTimeId], references: [id], onDelete: SetNull)
+  templateTimeId String?
+}
+
+model Offering {
+  id              String   @id @default(cuid())
+  stripePaymentId String?
+  amount          Int
+  currency        String   @default("usd")
+  donorName       String?
+  donorEmail      String?
+  note            String?
+  type            String?
+  recurring       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+}
+
+model Sermon {
+  id          String   @id @default(cuid())
+  title       String
+  speaker     String
+  date        DateTime
+  description String?
+  videoUrl    String?
+  audioUrl    String?
+  thumbnail   String?
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime?
+  location    String?
+  imageUrl    String?
+  createdAt   DateTime  @default(now())
+}
+
+model Page {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  content   String
+  updatedAt DateTime @updatedAt
+}
+
+model SongNote {
+  id            String      @id @default(cuid())
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  arrangement   Arrangement @relation(fields: [arrangementId], references: [id], onDelete: Cascade)
+  arrangementId String
+  content       String
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([userId, arrangementId])
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  String
+  createdAt DateTime @default(now())
+}
+
+model Task {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  content   String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model DashboardWidget {
+  id       String  @id @default(cuid())
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+  widgetId String
+  visible  Boolean @default(true)
+  order    Int     @default(0)
+  width    Int     @default(1)
+
+  @@unique([userId, widgetId])
+}
