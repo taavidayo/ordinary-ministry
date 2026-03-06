@@ -125,6 +125,7 @@ model ServiceCategory {
   description String?
   color       String    @default("gray")
   minRole     Role      @default(MEMBER)
+  syncEvents  Boolean   @default(false)
   order       Int       @default(0)
   createdAt   DateTime  @default(now())
   services    Service[]
@@ -148,6 +149,8 @@ model Service {
   series        ServiceSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   date          DateTime
   notes         String?
+  linkedEventId String?          @unique
+  linkedEvent   Event?           @relation("serviceLinkedEvent", fields: [linkedEventId], references: [id], onDelete: SetNull)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   updatedById   String?
@@ -280,28 +283,43 @@ model Offering {
   createdAt       DateTime @default(now())
 }
 
+model SermonPlaylist {
+  id                String    @id @default(cuid())
+  name              String
+  youtubePlaylistId String    @unique
+  defaultSpeaker    String    @default("")
+  autoSync          Boolean   @default(true)
+  lastSyncedAt      DateTime?
+  createdAt         DateTime  @default(now())
+  sermons           Sermon[]
+}
+
 model Sermon {
-  id          String   @id @default(cuid())
-  title       String
-  speaker     String
-  date        DateTime
-  description String?
-  videoUrl    String?
-  audioUrl    String?
-  thumbnail   String?
-  slug        String   @unique
-  createdAt   DateTime @default(now())
+  id             String          @id @default(cuid())
+  title          String
+  speaker        String
+  date           DateTime
+  description    String?
+  videoUrl       String?
+  audioUrl       String?
+  thumbnail      String?
+  slug           String          @unique
+  youtubeVideoId String?
+  playlistId     String?
+  playlist       SermonPlaylist? @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
 }
 
 model Event {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  startDate   DateTime
-  endDate     DateTime?
-  location    String?
-  imageUrl    String?
-  createdAt   DateTime  @default(now())
+  id            String    @id @default(cuid())
+  title         String
+  description   String?
+  startDate     DateTime
+  endDate       DateTime?
+  location      String?
+  imageUrl      String?
+  createdAt     DateTime  @default(now())
+  sourceService Service?  @relation("serviceLinkedEvent")
 }
 
 model Page {

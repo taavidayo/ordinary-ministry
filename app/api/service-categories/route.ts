@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  const { name, description, color, minRole, order } = await req.json()
+  const { name, description, color, minRole, syncEvents, order } = await req.json()
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 })
 
   try {
@@ -26,6 +26,7 @@ export async function POST(req: Request) {
         description: description || null,
         color: color || "gray",
         minRole: minRole || "MEMBER",
+        syncEvents: syncEvents ?? false,
         order: order ?? 0,
       },
       include: { _count: { select: { services: true } } },

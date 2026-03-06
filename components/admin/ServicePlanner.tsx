@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
-import { Trash2, GripVertical, Plus, BookOpen, Users, Search, Check, X, ChevronDown, Pencil, Link2, Clock, Mail, MoreHorizontal, ChevronLeft, ChevronRight, AlertTriangle, LayoutTemplate } from "lucide-react"
+import { Trash2, GripVertical, Plus, BookOpen, Users, Search, Check, X, ChevronDown, Pencil, Link2, Clock, Mail, MoreHorizontal, ChevronLeft, ChevronRight, AlertTriangle, LayoutTemplate, Layers, Upload } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
@@ -19,7 +19,7 @@ interface User { id: string; name: string; email: string }
 interface Role { id: string; name: string; needed: number }
 interface Slot { id: string; role: Role; user: User | null; status: string; rehearsal: boolean; notes: string | null }
 interface ServiceTeam { id: string; team: { id: string; name: string }; serviceTimeId: string | null; slots: Slot[] }
-interface Series { id: string; name: string }
+interface Series { id: string; name: string; imageUrl: string | null }
 interface Template { id: string; name: string; description: string | null }
 interface Arrangement { id: string; name: string }
 interface SongBasic { id: string; title: string; author: string | null }
@@ -90,12 +90,21 @@ const TYPE_COLORS: Record<ProgramItemType, string> = {
   HEADER: "bg-gray-200 text-gray-600",
 }
 
+function getInitials(name: string): string {
+  return name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
+}
+
 export default function ServicePlanner({ service: init, allSongs, allTeams, allSeries, allTemplates, prevId, nextId }: Props) {
   // ── Series + blockout state ───────────────────────────────────────────────────
   const [seriesId, setSeriesId] = useState(init.seriesId ?? "")
   const [seriesList, setSeriesList] = useState<Series[]>(allSeries)
   const [newSeriesOpen, setNewSeriesOpen] = useState(false)
   const [newSeriesName, setNewSeriesName] = useState("")
+  const [seriesPickerOpen, setSeriesPickerOpen] = useState(false)
+  const [seriesPickerServices, setSeriesPickerServices] = useState<{ id: string; title: string; date: string; seriesId: string | null }[]>([])
+  const [seriesPickerLoading, setSeriesPickerLoading] = useState(false)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+  const uploadTargetSeriesId = useRef<string | null>(null)
   const [deleteServiceOpen, setDeleteServiceOpen] = useState(false)
   const [deletingService, setDeletingService] = useState(false)
   const [importTemplateOpen, setImportTemplateOpen] = useState(false)
@@ -140,6 +149,43 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
     setNewSeriesOpen(false)
     updateSeries(created.id)
     toast.success(`Series "${created.name}" created`)
+  }
+
+  async function openSeriesPicker() {
+    setSeriesPickerOpen(true)
+    if (seriesPickerServices.length > 0) return
+    setSeriesPickerLoading(true)
+    try {
+      const res = await fetch("/api/services")
+      const all = await res.json()
+      setSeriesPickerServices(all.map((s: { id: string; title: string; date: string; seriesId?: string }) => ({
+        id: s.id, title: s.title, date: s.date, seriesId: s.seriesId ?? null,
+      })))
+    } finally {
+      setSeriesPickerLoading(false)
+    }
+  }
+
+  function triggerUpload(sId: string) {
+    uploadTargetSeriesId.current = sId
+    uploadInputRef.current?.click()
+  }
+
+  async function uploadSeriesImage(sId: string, file: File) {
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const imageUrl = e.target?.result as string
+      const res = await fetch(`/api/series/${sId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl }),
+      })
+      if (res.ok) {
+        setSeriesList((prev) => prev.map((s) => s.id === sId ? { ...s, imageUrl } : s))
+        toast.success("Series artwork updated")
+      }
+    }
+    reader.readAsDataURL(file)
   }
 
   async function deleteService() {
@@ -225,6 +271,22 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
   const [dialogRehearsal, setDialogRehearsal] = useState(false)
   const [dialogNotes, setDialogNotes] = useState("")
   const [dialogSaving, setDialogSaving] = useState(false)
+
+  // ── Role picker dialog state ───────────────────────────────────────────────
+  const [rolePickerDialog, setRolePickerDialog] = useState<{
+    role: Role
+    st: ServiceTeam
+    members: { user: User }[]
+  } | null>(null)
+  const [pendingConflict, setPendingConflict] = useState<{
+    user: User
+    conflicts: { roleName: string; teamName: string }[]
+  } | null>(null)
+
+  function closeRolePicker() {
+    setRolePickerDialog(null)
+    setPendingConflict(null)
+  }
 
   function openSlotDialog(slot: Slot, roleName: string, st: ServiceTeam) {
     setSlotDialog({ slot, roleName, teamName: st.team.name, teamId: st.team.id })
@@ -717,101 +779,91 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
     <div className="space-y-4">
       {/* ── Page header ──────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-2 min-w-0">
-          {/* Prev / Next navigation */}
-          <div className="flex gap-1 mt-0.5 shrink-0">
-            {prevId ? (
-              <Link href={`/admin/services/${prevId}`} className="inline-flex items-center justify-center h-8 w-8 rounded border bg-white hover:bg-gray-50 text-muted-foreground">
-                <ChevronLeft className="h-4 w-4" />
-              </Link>
-            ) : (
-              <span className="inline-flex items-center justify-center h-8 w-8 rounded border bg-white text-muted-foreground/30">
-                <ChevronLeft className="h-4 w-4" />
-              </span>
-            )}
-            {nextId ? (
-              <Link href={`/admin/services/${nextId}`} className="inline-flex items-center justify-center h-8 w-8 rounded border bg-white hover:bg-gray-50 text-muted-foreground">
-                <ChevronRight className="h-4 w-4" />
-              </Link>
-            ) : (
-              <span className="inline-flex items-center justify-center h-8 w-8 rounded border bg-white text-muted-foreground/30">
-                <ChevronRight className="h-4 w-4" />
-              </span>
-            )}
-          </div>
-
-          {/* Title + date + series */}
-          <div className="min-w-0">
-            {editingTitle ? (
-              <div className="flex items-center gap-2 mb-0.5">
-                <Input
-                  className="h-8 text-lg font-bold w-72"
-                  value={editTitleValue}
-                  onChange={(e) => setEditTitleValue(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false) }}
-                  autoFocus
-                />
-                <button type="button" onClick={saveTitle} disabled={savingTitle} className="text-green-600 hover:text-green-700">
-                  <Check className="h-4 w-4" />
-                </button>
-                <button type="button" onClick={() => setEditingTitle(false)} className="text-muted-foreground hover:text-foreground">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="flex items-center gap-1.5 text-left group"
-                onClick={() => { setEditTitleValue(serviceTitle); setEditingTitle(true) }}
-              >
-                <h1 className="text-2xl font-bold leading-tight">{serviceTitle}</h1>
-                <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mt-1" />
+        <div className="min-w-0 flex-1">
+          {/* Title */}
+          {editingTitle ? (
+            <div className="flex items-center gap-2 mb-1">
+              <Input
+                className="h-8 text-lg font-bold w-72"
+                value={editTitleValue}
+                onChange={(e) => setEditTitleValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false) }}
+                autoFocus
+              />
+              <button type="button" onClick={saveTitle} disabled={savingTitle} className="text-green-600 hover:text-green-700">
+                <Check className="h-4 w-4" />
               </button>
-            )}
-            <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-sm text-muted-foreground">
-                {new Date(init.date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-              </p>
-              {/* Series selector */}
-              <Select value={seriesId || "__none__"} onValueChange={(v) => {
-                if (v === "__new__") { setNewSeriesOpen(true); return }
-                updateSeries(v === "__none__" ? "" : v)
-              }}>
-                <SelectTrigger className="h-6 text-xs border-dashed w-40 px-2">
-                  <SelectValue placeholder="No series" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No series</SelectItem>
-                  {seriesList.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
-                  <SelectItem value="__new__">
-                    <span className="flex items-center gap-1 text-muted-foreground"><Plus className="h-3 w-3" /> New series…</span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Dialog open={newSeriesOpen} onOpenChange={setNewSeriesOpen}>
-                <DialogContent className="max-w-sm">
-                  <DialogHeader>
-                    <DialogTitle>New Series</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-3">
-                    <Input
-                      placeholder="Series name"
-                      value={newSeriesName}
-                      onChange={(e) => setNewSeriesName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && createSeries()}
-                      autoFocus
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setNewSeriesOpen(false)}>Cancel</Button>
-                      <Button size="sm" onClick={createSeries} disabled={!newSeriesName.trim()}>Create</Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <button type="button" onClick={() => setEditingTitle(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
             </div>
+          ) : (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-left group mb-1"
+              onClick={() => { setEditTitleValue(serviceTitle); setEditingTitle(true) }}
+            >
+              <h1 className="text-2xl font-bold leading-tight">{serviceTitle}</h1>
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mt-1" />
+            </button>
+          )}
+
+          {/* Sub-row: prev/next + date + series icon */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex gap-0.5">
+              {prevId ? (
+                <Link href={`/admin/services/${prevId}`} className="inline-flex items-center justify-center h-6 w-6 rounded border bg-white hover:bg-gray-50 text-muted-foreground">
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Link>
+              ) : (
+                <span className="inline-flex items-center justify-center h-6 w-6 rounded border bg-white text-muted-foreground/30">
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </span>
+              )}
+              {nextId ? (
+                <Link href={`/admin/services/${nextId}`} className="inline-flex items-center justify-center h-6 w-6 rounded border bg-white hover:bg-gray-50 text-muted-foreground">
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              ) : (
+                <span className="inline-flex items-center justify-center h-6 w-6 rounded border bg-white text-muted-foreground/30">
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {new Date(init.date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            </p>
+            {/* Series icon button */}
+            {(() => {
+              const currentSeries = seriesList.find((s) => s.id === seriesId) ?? null
+              return (
+                <button
+                  type="button"
+                  onClick={openSeriesPicker}
+                  className="flex items-center gap-1.5 group/series"
+                  title={currentSeries ? currentSeries.name : "Assign series"}
+                >
+                  <div className="w-6 h-6 rounded overflow-hidden shrink-0">
+                    {currentSeries?.imageUrl ? (
+                      <img src={currentSeries.imageUrl} className="w-full h-full object-cover" alt={currentSeries.name} />
+                    ) : currentSeries ? (
+                      <div className="w-full h-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center">
+                        <span className="text-white text-[9px] font-bold">{currentSeries.name[0]?.toUpperCase()}</span>
+                      </div>
+                    ) : (
+                      <div className="w-full h-full rounded border border-dashed border-muted-foreground/30 flex items-center justify-center">
+                        <Layers className="h-3 w-3 text-muted-foreground/40" />
+                      </div>
+                    )}
+                  </div>
+                  {currentSeries ? (
+                    <span className="text-xs text-muted-foreground group-hover/series:text-foreground transition-colors">{currentSeries.name}</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/50 group-hover/series:text-muted-foreground transition-colors">No series</span>
+                  )}
+                </button>
+              )
+            })()}
           </div>
         </div>
 
@@ -1066,68 +1118,83 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                             const members = teamDef?.members ?? []
                             const available = members.filter((m) => !filledUserIds.includes(m.user.id))
                             const roleNeeded = neededMap[role.id] ?? role.needed
-                            const stillNeeded = roleNeeded > 0 ? roleNeeded - slots.length : 0
+                            const stillNeeded = Math.max(0, roleNeeded - slots.length)
                             return (
-                              <div key={role.id} className="mb-1.5">
-                                <div className="flex items-center gap-1.5 mb-0.5">
-                                  <p className="text-xs text-muted-foreground font-medium">{role.name}</p>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    className="w-7 h-4 text-xs text-center bg-background border rounded px-0.5"
-                                    value={neededMap[role.id] ?? role.needed}
-                                    title="Needed count"
-                                    onChange={(e) => setNeededMap((prev) => ({ ...prev, [role.id]: parseInt(e.target.value) || 0 }))}
-                                    onBlur={(e) => updateNeeded(role.id, parseInt(e.target.value) || 0)}
-                                  />
+                              <div key={role.id} className="mb-3 last:mb-0">
+                                {/* Role name + faint count (affordance) + hover +/- buttons */}
+                                <div className="group/role flex items-center gap-1.5 mb-1.5">
+                                  <p className="text-xs font-medium text-muted-foreground">{role.name}</p>
+                                  <div className="flex items-center gap-0.5">
+                                    <button
+                                      type="button"
+                                      className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-gray-100 leading-none opacity-0 group-hover/role:opacity-100 transition-opacity"
+                                      onClick={() => updateNeeded(role.id, Math.max(0, roleNeeded - 1))}
+                                    >−</button>
+                                    <span className="text-xs w-4 text-center tabular-nums text-muted-foreground/30 group-hover/role:text-muted-foreground transition-colors">{roleNeeded}</span>
+                                    <button
+                                      type="button"
+                                      className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-gray-100 leading-none opacity-0 group-hover/role:opacity-100 transition-opacity"
+                                      onClick={() => updateNeeded(role.id, roleNeeded + 1)}
+                                    >+</button>
+                                  </div>
                                   {stillNeeded > 0 && (
                                     <span className="text-xs text-orange-600 font-medium">{stillNeeded} needed</span>
                                   )}
                                 </div>
-                                <div className="flex flex-wrap gap-1 items-center">
+                                {/* Slot avatars + empty circles */}
+                                <div className="flex flex-wrap gap-2 items-start">
                                   {slots.map((slot) => {
-                                    const statusMeta = {
-                                      CONFIRMED: { label: "✓", color: "bg-green-100 text-green-700" },
-                                      DECLINED:  { label: "✗", color: "bg-red-100 text-red-700" },
-                                      PENDING:   { label: "?", color: "bg-yellow-50 text-yellow-700 border border-yellow-200" },
-                                    }
-                                    const meta = statusMeta[slot.status as keyof typeof statusMeta] ?? statusMeta.PENDING
+                                    const statusRing = ({
+                                      CONFIRMED: "ring-green-400",
+                                      DECLINED:  "ring-red-400",
+                                      PENDING:   "ring-yellow-300",
+                                    } as Record<string, string>)[slot.status] ?? "ring-yellow-300"
                                     return (
-                                      <span key={slot.id} className="inline-flex items-center gap-0.5 text-xs bg-secondary rounded-full pl-2 pr-1 py-0.5 font-medium">
+                                      <div key={slot.id} className="flex flex-col items-center gap-1.5 group/slot">
                                         <button
                                           type="button"
-                                          className="hover:underline leading-none"
                                           onClick={() => openSlotDialog(slot, role.name, st)}
+                                          title={slot.user!.name}
+                                          className={`w-8 h-8 rounded-full bg-secondary ring-2 ${statusRing} flex items-center justify-center text-xs font-semibold hover:opacity-80 transition-opacity`}
                                         >
-                                          {slot.user!.name}
+                                          {getInitials(slot.user!.name)}
                                         </button>
-                                        <span className={`text-xs rounded px-1 leading-none ${meta.color}`}>{meta.label}</span>
-                                        {slot.rehearsal && <span className="text-xs rounded px-1 leading-none bg-blue-50 text-blue-600">R</span>}
-                                        <button type="button" onClick={() => removeSlot(slot.id)} className="hover:text-destructive leading-none ml-0.5">
+                                        <span className="text-[10px] text-muted-foreground leading-none max-w-[40px] truncate text-center">
+                                          {slot.user!.name.split(" ")[0]}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => removeSlot(slot.id)}
+                                          title="Remove"
+                                          className="opacity-0 group-hover/slot:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                        >
                                           <X className="h-2.5 w-2.5" />
                                         </button>
-                                      </span>
+                                      </div>
                                     )
                                   })}
-                                  {available.length > 0 && (
-                                    <Select
-                                      key={`${st.id}-${role.id}-${slots.length}`}
-                                      onValueChange={(userId) => addSlot(st.id, role.id, userId)}
+                                  {/* Empty slot circles for unfilled needed */}
+                                  {Array.from({ length: stillNeeded }).map((_, i) => (
+                                    <button
+                                      key={`empty-${i}`}
+                                      type="button"
+                                      onClick={() => setRolePickerDialog({ role, st, members })}
+                                      title={`Assign ${role.name}`}
+                                      className="w-8 h-8 rounded-full border-2 border-dashed border-muted-foreground/30 hover:border-primary hover:bg-primary/5 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
                                     >
-                                      <SelectTrigger className="h-6 w-20 text-xs border-dashed px-2">
-                                        <SelectValue placeholder="+ Add" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {available.map((m) => {
-                                          const isBlocked = blockedUserIds.has(m.user.id)
-                                          return (
-                                            <SelectItem key={m.user.id} value={m.user.id}>
-                                              {m.user.name}{isBlocked ? " (unavailable)" : ""}
-                                            </SelectItem>
-                                          )
-                                        })}
-                                      </SelectContent>
-                                    </Select>
+                                      <Plus className="h-3.5 w-3.5" />
+                                    </button>
+                                  ))}
+                                  {/* Dim extra "+" when fully staffed but more members available */}
+                                  {stillNeeded === 0 && available.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setRolePickerDialog({ role, st, members })}
+                                      title={`Add extra ${role.name}`}
+                                      className="w-7 h-7 rounded-full border border-dashed border-muted-foreground/20 hover:border-muted-foreground/50 flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -1841,6 +1908,236 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
               {dialogSaving ? "Saving…" : "Save"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── New series dialog ───────────────────────────────────────────────── */}
+      <Dialog open={newSeriesOpen} onOpenChange={setNewSeriesOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>New Series</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              placeholder="Series name"
+              value={newSeriesName}
+              onChange={(e) => setNewSeriesName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && createSeries()}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setNewSeriesOpen(false)}>Cancel</Button>
+              <Button size="sm" onClick={createSeries} disabled={!newSeriesName.trim()}>Create</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Series picker dialog ─────────────────────────────────────────────── */}
+      <Dialog open={seriesPickerOpen} onOpenChange={setSeriesPickerOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Series</DialogTitle>
+          </DialogHeader>
+
+          {/* Hidden file input for artwork uploads */}
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file && uploadTargetSeriesId.current) {
+                uploadSeriesImage(uploadTargetSeriesId.current, file)
+              }
+              e.target.value = ""
+            }}
+          />
+
+          {/* Series grid */}
+          <div className="grid grid-cols-3 gap-3">
+            {/* None */}
+            <button
+              type="button"
+              onClick={() => { updateSeries(""); setSeriesPickerOpen(false) }}
+              className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-colors ${
+                !seriesId ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              <div className="w-full aspect-square rounded-md border-2 border-dashed border-muted-foreground/20 flex items-center justify-center bg-gray-50">
+                <X className="h-6 w-6 text-muted-foreground/30" />
+              </div>
+              <span className="text-xs text-muted-foreground">None</span>
+            </button>
+
+            {/* Series cards */}
+            {seriesList.map((s) => (
+              <div key={s.id} className="relative group/scard">
+                <button
+                  type="button"
+                  onClick={() => { updateSeries(s.id); setSeriesPickerOpen(false) }}
+                  className={`w-full flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-colors ${
+                    seriesId === s.id ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="w-full aspect-square rounded-md overflow-hidden">
+                    {s.imageUrl ? (
+                      <img src={s.imageUrl} className="w-full h-full object-cover" alt={s.name} />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center">
+                        <span className="text-2xl font-bold text-purple-400">{s.name[0]?.toUpperCase()}</span>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs font-medium truncate w-full text-center">{s.name}</span>
+                </button>
+                {/* Upload overlay */}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); triggerUpload(s.id) }}
+                  title="Upload artwork"
+                  className="absolute top-3 right-3 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover/scard:opacity-100 transition-opacity"
+                >
+                  <Upload className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+
+            {/* New series */}
+            <button
+              type="button"
+              onClick={() => { setSeriesPickerOpen(false); setNewSeriesOpen(true) }}
+              className="flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 border-dashed border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-gray-50 transition-colors"
+            >
+              <div className="w-full aspect-square rounded-md flex items-center justify-center">
+                <Plus className="h-8 w-8 text-muted-foreground/30" />
+              </div>
+              <span className="text-xs text-muted-foreground">New series</span>
+            </button>
+          </div>
+
+          {/* Other services in the selected series */}
+          {seriesId && (() => {
+            if (seriesPickerLoading) return (
+              <p className="text-xs text-muted-foreground text-center py-2 border-t mt-1 pt-3">Loading services…</p>
+            )
+            const others = seriesPickerServices.filter((s) => s.seriesId === seriesId && s.id !== init.id)
+            if (others.length === 0) return null
+            return (
+              <div className="border-t pt-3 mt-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Other services in this series</p>
+                <div className="space-y-1">
+                  {others.map((s) => (
+                    <div key={s.id} className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(s.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      {s.title && <span className="text-xs font-medium">· {s.title}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Role picker dialog ──────────────────────────────────────────────── */}
+      <Dialog open={!!rolePickerDialog} onOpenChange={(o) => !o && closeRolePicker()}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Assign {rolePickerDialog?.role.name}</DialogTitle>
+            <p className="text-xs text-muted-foreground pt-0.5">
+              {new Date(init.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            </p>
+          </DialogHeader>
+
+          {pendingConflict ? (
+            /* ── Conflict warning ── */
+            <div className="space-y-4 pt-1">
+              <div className="flex gap-3 p-3 rounded-lg bg-orange-50 border border-orange-200">
+                <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-orange-800">Scheduling conflict</p>
+                  <p className="text-xs text-orange-700 mt-0.5">
+                    {pendingConflict.user.name} is already assigned to:
+                  </p>
+                  <ul className="text-xs text-orange-700 mt-1 space-y-0.5">
+                    {pendingConflict.conflicts.map((c, i) => (
+                      <li key={i}>· {c.roleName} in {c.teamName}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => setPendingConflict(null)}>
+                  Cancel
+                </Button>
+                <Button size="sm" className="flex-1" onClick={async () => {
+                  if (!rolePickerDialog) return
+                  await addSlot(rolePickerDialog.st.id, rolePickerDialog.role.id, pendingConflict.user.id)
+                  closeRolePicker()
+                }}>
+                  Assign Anyway
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* ── Member list ── */
+            <div className="space-y-1 max-h-80 overflow-y-auto -mx-1 px-1">
+              {(() => {
+                if (!rolePickerDialog) return null
+                const { role, st, members } = rolePickerDialog
+                const currentSt = teams.find((t) => t.id === st.id)
+                const filledIds = currentSt?.slots.filter((s) => s.role.id === role.id && s.user !== null).map((s) => s.user!.id) ?? []
+                const options = members.filter((m) => !filledIds.includes(m.user.id))
+                if (options.length === 0) {
+                  return <p className="text-sm text-muted-foreground text-center py-6">No more members available.</p>
+                }
+                return options.map(({ user }) => {
+                  const blocked = blockedUserIds.has(user.id)
+                  const existingAssignments = teams.flatMap((t) =>
+                    t.slots
+                      .filter((s) => s.user?.id === user.id)
+                      .map((s) => ({ roleName: s.role.name, teamName: t.team.name }))
+                  )
+                  const hasConflict = existingAssignments.length > 0
+                  return (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onClick={() => {
+                        if (hasConflict) {
+                          setPendingConflict({ user, conflicts: existingAssignments })
+                        } else {
+                          addSlot(st.id, role.id, user.id)
+                          closeRolePicker()
+                        }
+                      }}
+                      disabled={blocked}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+                        blocked
+                          ? "opacity-60 cursor-not-allowed bg-gray-50"
+                          : "hover:bg-gray-50 hover:ring-1 hover:ring-gray-200"
+                      }`}
+                    >
+                      <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold shrink-0">
+                        {getInitials(user.name)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{user.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                      </div>
+                      <span className={`text-xs font-medium shrink-0 ${blocked ? "text-orange-500" : hasConflict ? "text-yellow-600" : "text-green-600"}`}>
+                        {blocked ? "Unavailable" : hasConflict ? "Conflict" : "Available"}
+                      </span>
+                    </button>
+                  )
+                })
+              })()}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

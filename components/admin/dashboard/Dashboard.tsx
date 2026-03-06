@@ -243,7 +243,7 @@ export default function Dashboard({
             <div
               key={w.id}
               className={editing
-                ? "rounded-xl ring-2 ring-primary/25 ring-offset-0 cursor-grab active:cursor-grabbing overflow-hidden"
+                ? "rounded-xl ring-2 ring-primary/25 ring-offset-0 cursor-grab active:cursor-grabbing"
                 : "overflow-hidden"
               }
             >

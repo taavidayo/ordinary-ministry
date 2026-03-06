@@ -36,7 +36,7 @@ export default async function ServicesPage() {
     db.serviceCategory.findMany({
       where: { minRole: { in: accessibleMinRoles as ("ADMIN" | "LEADER" | "MEMBER")[] } },
       orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, color: true },
+      select: { id: true, name: true, color: true, minRole: true },
     }),
     db.serviceTemplate.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.serviceSeries.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -54,11 +54,9 @@ export default async function ServicesPage() {
     a === "Uncategorized" ? 1 : b === "Uncategorized" ? -1 : a.localeCompare(b)
   )
 
-  const categoryMeta: Record<string, { color: string; minRole: string }> = {}
-  for (const s of services) {
-    if (s.category) {
-      categoryMeta[s.category.name] = { color: s.category.color, minRole: s.category.minRole }
-    }
+  const categoryMeta: Record<string, { id: string; color: string; minRole: string }> = {}
+  for (const cat of categories) {
+    categoryMeta[cat.name] = { id: cat.id, color: cat.color, minRole: cat.minRole }
   }
 
   const groups = groupKeys.map((key) => ({

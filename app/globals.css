@@ -127,58 +127,55 @@
   }
 }
 
-/* ── Dashboard grid resize handles — curved corner brackets ── */
+/* ── Dashboard grid resize handles — arc corners matching widget radius ── */
+/* Reset ALL default react-resizable handle styles (removes their rotate() transforms) */
 .react-resizable-handle {
-  position: absolute;
-  width: 22px;
-  height: 22px;
+  position: absolute !important;
+  width: 24px !important;
+  height: 24px !important;
+  background: none !important;
   background-image: none !important;
+  transform: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
   opacity: 0;
   transition: opacity 0.15s;
-  z-index: 10;
+  z-index: 20;
 }
-.react-grid-item:hover .react-resizable-handle {
+/* Visible when edit mode active (.react-resizable is added by react-resizable when isResizable=true) */
+.react-resizable .react-resizable-handle {
+  opacity: 0.6;
+}
+.react-resizable:hover .react-resizable-handle,
+.react-resizable .react-resizable-handle:hover {
   opacity: 1;
 }
-.react-resizable-handle::after {
-  content: "";
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  background: none;
-}
 
-/* SE — bottom-right */
-.react-resizable-handle-se { bottom: 0; right: 0; cursor: se-resize; }
-.react-resizable-handle-se::after {
-  bottom: 5px; right: 5px;
-  border-bottom: 2px solid hsl(215 15% 52%);
-  border-right: 2px solid hsl(215 15% 52%);
-  border-bottom-right-radius: 0.55rem;
+/* Each handle sits near its corner with a small inset margin */
+.react-resizable-handle-se {
+  bottom: 4px !important; right: 4px !important; cursor: se-resize !important;
+  border-bottom: 2.5px solid #7c8fa6 !important;
+  border-right: 2.5px solid #7c8fa6 !important;
+  border-bottom-right-radius: 0.75rem !important;
 }
-/* SW — bottom-left */
-.react-resizable-handle-sw { bottom: 0; left: 0; cursor: sw-resize; }
-.react-resizable-handle-sw::after {
-  bottom: 5px; left: 5px;
-  border-bottom: 2px solid hsl(215 15% 52%);
-  border-left: 2px solid hsl(215 15% 52%);
-  border-bottom-left-radius: 0.55rem;
+.react-resizable-handle-sw {
+  bottom: 4px !important; left: 4px !important; cursor: sw-resize !important;
+  border-bottom: 2.5px solid #7c8fa6 !important;
+  border-left: 2.5px solid #7c8fa6 !important;
+  border-bottom-left-radius: 0.75rem !important;
 }
-/* NE — top-right */
-.react-resizable-handle-ne { top: 0; right: 0; cursor: ne-resize; }
-.react-resizable-handle-ne::after {
-  top: 5px; right: 5px;
-  border-top: 2px solid hsl(215 15% 52%);
-  border-right: 2px solid hsl(215 15% 52%);
-  border-top-right-radius: 0.55rem;
+.react-resizable-handle-ne {
+  top: 4px !important; right: 4px !important; cursor: ne-resize !important;
+  border-top: 2.5px solid #7c8fa6 !important;
+  border-right: 2.5px solid #7c8fa6 !important;
+  border-top-right-radius: 0.75rem !important;
 }
-/* NW — top-left */
-.react-resizable-handle-nw { top: 0; left: 0; cursor: nw-resize; }
-.react-resizable-handle-nw::after {
-  top: 5px; left: 5px;
-  border-top: 2px solid hsl(215 15% 52%);
-  border-left: 2px solid hsl(215 15% 52%);
-  border-top-left-radius: 0.55rem;
+.react-resizable-handle-nw {
+  top: 4px !important; left: 4px !important; cursor: nw-resize !important;
+  border-top: 2.5px solid #7c8fa6 !important;
+  border-left: 2.5px solid #7c8fa6 !important;
+  border-top-left-radius: 0.75rem !important;
 }
 
 .react-grid-item.react-draggable-dragging {

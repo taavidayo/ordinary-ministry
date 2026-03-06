@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Pencil, Trash2, Plus, Check, X } from "lucide-react"
+import { Pencil, Trash2, Plus, Check, X, CalendarPlus, RefreshCw } from "lucide-react"
 import { CATEGORY_COLORS, COLOR_OPTIONS, ROLE_LABELS, ROLE_BADGE } from "@/lib/category-colors"
 
 type MinRole = "VISITOR" | "MEMBER" | "LEADER" | "ADMIN"
@@ -17,6 +17,7 @@ interface Category {
   description: string | null
   color: string
   minRole: MinRole
+  syncEvents: boolean
   order: number
   _count: { services: number }
 }
@@ -26,9 +27,10 @@ interface FormState {
   description: string
   color: string
   minRole: MinRole
+  syncEvents: boolean
 }
 
-const DEFAULT_FORM: FormState = { name: "", description: "", color: "gray", minRole: "MEMBER" }
+const DEFAULT_FORM: FormState = { name: "", description: "", color: "gray", minRole: "MEMBER", syncEvents: false }
 
 interface Props {
   initialCategories: Category[]
@@ -62,7 +64,7 @@ export default function ServiceCategoryManager({ initialCategories }: Props) {
 
   function startEdit(cat: Category) {
     setEditingId(cat.id)
-    setEditForm({ name: cat.name, description: cat.description ?? "", color: cat.color, minRole: cat.minRole })
+    setEditForm({ name: cat.name, description: cat.description ?? "", color: cat.color, minRole: cat.minRole, syncEvents: cat.syncEvents })
   }
 
   async function handleEdit(id: string) {
@@ -75,10 +77,32 @@ export default function ServiceCategoryManager({ initialCategories }: Props) {
       const updated = await res.json()
       setCategories(categories.map((c) => c.id === id ? { ...c, ...updated } : c))
       setEditingId(null)
-      toast.success("Category updated")
+      if (updated.synced > 0) {
+        toast.success(`Category updated — synced ${updated.synced} existing service${updated.synced === 1 ? "" : "s"} to Events`)
+      } else {
+        toast.success("Category updated")
+      }
     } else {
       const err = await res.json()
       toast.error(err.error ?? "Failed to update category")
+    }
+  }
+
+  async function handleSync(id: string) {
+    const res = await fetch(`/api/service-categories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ syncEvents: true }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      if (updated.synced > 0) {
+        toast.success(`Synced ${updated.synced} service${updated.synced === 1 ? "" : "s"} to Events`)
+      } else {
+        toast.success("All services already synced")
+      }
+    } else {
+      toast.error("Sync failed")
     }
   }
 
@@ -149,6 +173,22 @@ export default function ServiceCategoryManager({ initialCategories }: Props) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {cat.syncEvents && (
+                      <>
+                        <span title="Syncs to Events" className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded font-medium bg-blue-100 text-blue-700">
+                          <CalendarPlus className="h-3 w-3" /> Synced
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-blue-600 hover:text-blue-700"
+                          title="Sync existing services to Events"
+                          onClick={() => handleSync(cat.id)}
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
                     <Badge variant="secondary" className="text-xs">{cat._count.services} services</Badge>
                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_BADGE[cat.minRole]}`}>
                       {ROLE_LABELS[cat.minRole]}
@@ -241,6 +281,16 @@ function CategoryForm({
           </Select>
         </div>
       </div>
+      <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
+        <input
+          type="checkbox"
+          checked={form.syncEvents}
+          onChange={(e) => onChange({ ...form, syncEvents: e.target.checked })}
+          className="h-4 w-4 rounded border-gray-300 cursor-pointer"
+        />
+        <span className="text-sm font-medium">Sync services to Events</span>
+        <span className="text-xs text-muted-foreground">— auto-creates an event entry for each service in this category</span>
+      </label>
       <div className="flex gap-2">
         <Button size="sm" onClick={onSave}>
           <Check className="h-3.5 w-3.5 mr-1" />{saveLabel}

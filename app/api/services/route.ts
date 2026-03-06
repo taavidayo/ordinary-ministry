@@ -34,5 +34,26 @@ export async function POST(req: Request) {
       seriesId: seriesId || null,
     },
   })
+
+  // Auto-create linked event if the category has syncEvents enabled
+  if (categoryId) {
+    const category = await db.serviceCategory.findUnique({ where: { id: categoryId } })
+    if (category?.syncEvents) {
+      const eventTitle = title?.trim() || category.name
+      const event = await db.event.create({
+        data: {
+          title: eventTitle,
+          description: notes || null,
+          startDate: new Date(date),
+        },
+      })
+      await db.service.update({
+        where: { id: service.id },
+        data: { linkedEventId: event.id },
+      })
+      return NextResponse.json({ ...service, linkedEventId: event.id }, { status: 201 })
+    }
+  }
+
   return NextResponse.json(service, { status: 201 })
 }

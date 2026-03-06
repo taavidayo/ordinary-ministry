@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react"
+import { ChevronDown, ChevronRight, Trash2, LayoutGrid } from "lucide-react"
 import { CATEGORY_COLORS, ROLE_BADGE, ROLE_LABELS } from "@/lib/category-colors"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -22,7 +22,7 @@ interface ServiceRow {
 
 interface ServiceGroup {
   key: string
-  meta?: { color: string; minRole: string }
+  meta?: { id: string; color: string; minRole: string }
   services: ServiceRow[]
 }
 
@@ -80,74 +80,88 @@ export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmi
           return (
             <div key={key}>
               {/* Group header */}
-              <button
-                type="button"
-                onClick={() => toggle(key)}
-                className="w-full flex items-center gap-2 mb-2 group"
-              >
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  {colors && <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${colors.dot}`} />}
-                  <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                    {key}
-                  </h2>
-                  {meta && isAdmin && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_BADGE[meta.minRole]}`}>
-                      {ROLE_LABELS[meta.minRole]}
-                    </span>
-                  )}
-                  <span className="text-xs text-muted-foreground">({services.length})</span>
-                </div>
-                {isCollapsed
-                  ? <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                }
-              </button>
+              <div className="w-full flex items-center gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => toggle(key)}
+                  className="flex items-center gap-2 flex-1 min-w-0 group"
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {colors && <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${colors.dot}`} />}
+                    <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      {key}
+                    </h2>
+                    {meta && isAdmin && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_BADGE[meta.minRole]}`}>
+                        {ROLE_LABELS[meta.minRole]}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground">({services.length})</span>
+                  </div>
+                  {isCollapsed
+                    ? <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                  }
+                </button>
+                {meta?.id && (
+                  <Link
+                    href={`/admin/services/matrix?categoryId=${meta.id}`}
+                    className="h-6 w-6 inline-flex items-center justify-center rounded border bg-white hover:bg-gray-50 text-muted-foreground shrink-0"
+                    title="Matrix view"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+              </div>
 
               {/* Service rows */}
               {!isCollapsed && (
-                <div className="bg-white rounded-lg border divide-y">
+                <div className="bg-white rounded-lg border overflow-hidden">
+                  {/* Table header */}
+                  <div className="grid gap-x-4 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide border-b bg-gray-50 items-center"
+                    style={{ gridTemplateColumns: "160px 1fr 160px 160px 20px" }}
+                  >
+                    <span>Date</span>
+                    <span>Title</span>
+                    <span>Series</span>
+                    <span>Updated</span>
+                    <span />
+                  </div>
+                  {/* Rows */}
                   {services.map((s) => (
-                    <div key={s.id} className="flex items-center group/row">
+                    <div key={s.id} className="flex items-center group/row border-t first:border-t-0">
                       <Link
                         href={`/admin/services/${s.id}`}
-                        className="flex items-center justify-between flex-1 px-4 py-3 hover:bg-gray-50 transition-colors min-w-0"
+                        className="grid gap-x-4 px-4 py-2.5 flex-1 hover:bg-gray-50 transition-colors items-center min-w-0"
+                        style={{ gridTemplateColumns: "160px 1fr 160px 160px 20px" }}
                       >
-                        <div className="min-w-0 flex-1">
-                          {/* Series */}
-                          {s.series && (
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">
-                              {s.series.name}
-                            </p>
-                          )}
-                          {/* Date */}
-                          <p className="font-medium">
-                            {new Date(s.date).toLocaleDateString("en-US", {
-                              weekday: "long",
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            })}
-                          </p>
-                          {/* Title (if set) */}
-                          {s.title && (
-                            <p className="text-sm text-muted-foreground">{s.title}</p>
-                          )}
-                          {/* Last updated */}
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Updated {formatRelativeTime(s.updatedAt)}
-                            {s.updatedBy && ` by ${s.updatedBy.name}`}
-                          </p>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 ml-3" />
+                        <span className="text-sm font-medium truncate">
+                          {new Date(s.date).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </span>
+                        <span className="text-sm truncate text-foreground">
+                          {s.title || <span className="text-muted-foreground">—</span>}
+                        </span>
+                        <span className="text-sm truncate text-muted-foreground">
+                          {s.series?.name || <span>—</span>}
+                        </span>
+                        <span className="text-xs text-muted-foreground truncate">
+                          {formatRelativeTime(s.updatedAt)}
+                          {s.updatedBy && ` · ${s.updatedBy.name}`}
+                        </span>
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 justify-self-end" />
                       </Link>
                       {isAdmin && (
                         <button
                           type="button"
                           onClick={() => setDeleteTarget(s)}
-                          className="px-3 py-3 text-muted-foreground opacity-0 group-hover/row:opacity-100 hover:text-destructive transition-all shrink-0"
+                          className="px-3 py-2.5 text-muted-foreground opacity-0 group-hover/row:opacity-100 hover:text-destructive transition-all shrink-0"
                           title="Delete service"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>
