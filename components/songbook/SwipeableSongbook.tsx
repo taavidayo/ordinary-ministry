@@ -42,13 +42,22 @@ export default function SwipeableSongbook({ songs, initialNotes = {} }: Props) {
   const [index, setIndex] = useState(0)
   const [direction, setDirection] = useState(0)
   const [transpose, setTranspose] = useState(0)
-  const [fontSize, setFontSize] = useState(14)
+  const [fontSize, setFontSize] = useState(() => {
+    if (typeof window === "undefined") return 14
+    const saved = localStorage.getItem("songbook-fontSize")
+    const parsed = saved ? parseInt(saved, 10) : NaN
+    return isNaN(parsed) ? 14 : Math.min(22, Math.max(10, parsed))
+  })
   const [showNotes, setShowNotes] = useState(false)
   const [notes, setNotes] = useState<Record<string, string>>(initialNotes)
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const noteDragControls = useDragControls()
+
+  useEffect(() => {
+    localStorage.setItem("songbook-fontSize", String(fontSize))
+  }, [fontSize])
 
   // Arrow key navigation — skip when typing in textarea
   useEffect(() => {
