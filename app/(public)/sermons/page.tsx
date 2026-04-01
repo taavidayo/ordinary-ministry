@@ -2,8 +2,18 @@ export const dynamic = "force-dynamic"
 
 import { db } from "@/lib/db"
 import Link from "next/link"
+import { parseSections } from "@/lib/page-blocks"
+import PublicPageRenderer from "@/components/public/PublicPageRenderer"
 
 export default async function SermonsPage() {
+  const cmsPage = await db.page.findUnique({ where: { slug: "sermons" } })
+  if (cmsPage?.published) {
+    const sections = parseSections(cmsPage.content)
+    if (sections.some(s => s.blocks.length > 0)) {
+      return <PublicPageRenderer sections={sections} />
+    }
+  }
+
   const sermons = await db.sermon.findMany({ orderBy: { date: "desc" } })
 
   return (

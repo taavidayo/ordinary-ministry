@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
+import { revalidatePath } from "next/cache"
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -17,7 +18,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const slot = await db.serviceSlot.update({
     where: { id },
     data,
-    include: { user: true, role: true },
+    include: {
+      user: true,
+      role: true,
+      serviceTeam: { include: { service: { select: { id: true } } } },
+    },
   })
+
+  revalidatePath(`/mychurch/services/${slot.serviceTeam.service.id}`)
+
   return NextResponse.json(slot)
 }

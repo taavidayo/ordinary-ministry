@@ -4,13 +4,30 @@ import { auth } from "@/lib/auth"
 import bcrypt from "bcryptjs"
 import crypto from "crypto"
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
+  const url = new URL(req.url)
+  const search = url.searchParams.get("search")?.trim()
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10), 100)
+
   const users = await db.user.findMany({
-    select: { id: true, name: true, email: true, role: true, phone: true, createdAt: true },
+    where: search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : undefined,
+    select: {
+      id: true, name: true, email: true, role: true, phone: true, createdAt: true,
+      memberCategory: { select: { id: true, name: true, color: true } },
+      ministry: { select: { id: true, name: true, color: true } },
+    },
     orderBy: { name: "asc" },
+    take: limit,
   })
   return NextResponse.json(users)
 }

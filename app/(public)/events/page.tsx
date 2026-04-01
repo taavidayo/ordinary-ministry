@@ -1,27 +1,54 @@
 export const dynamic = "force-dynamic"
 
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { parseSections } from "@/lib/page-blocks"
+import PublicPageRenderer from "@/components/public/PublicPageRenderer"
+import PublicEventsClient from "@/components/public/PublicEventsClient"
 
 export default async function EventsPage() {
-  const events = await db.event.findMany({ orderBy: { startDate: "asc" } })
+  // Try CMS-managed content first
+  const cmsPage = await db.page.findUnique({ where: { slug: "events" } })
+  if (cmsPage?.published) {
+    const sections = parseSections(cmsPage.content)
+    if (sections.some(s => s.blocks.length > 0)) {
+      return <PublicPageRenderer sections={sections} />
+    }
+  }
+
+  // Fallback: default events listing
+  const session = await auth()
+  const userId = session?.user?.id as string | undefined
+
+  const events = await db.event.findMany({
+    where: { published: true, startDate: { gte: new Date() } },
+    orderBy: { startDate: "asc" },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      startDate: true,
+      endDate: true,
+      location: true,
+      rsvpEnabled: true,
+      form: { select: { id: true } },
+    },
+  })
+
+  // Get the user's existing RSVPs for these events
+  const myRsvpEventIds: string[] = []
+  if (userId) {
+    const rsvps = await db.eventRsvp.findMany({
+      where: { eventId: { in: events.map(e => e.id) }, userId },
+      select: { eventId: true },
+    })
+    myRsvpEventIds.push(...rsvps.map(r => r.eventId))
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-16">
-      <h1 className="text-3xl font-bold mb-8">Events</h1>
-      {events.length === 0 && <p className="text-muted-foreground">No upcoming events.</p>}
-      <div className="space-y-4">
-        {events.map((ev) => (
-          <div key={ev.id} className="border rounded-lg p-5">
-            <h2 className="text-xl font-semibold mb-1">{ev.title}</h2>
-            <p className="text-sm text-muted-foreground mb-2">
-              {new Date(ev.startDate).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-              {ev.endDate && ` – ${new Date(ev.endDate).toLocaleDateString()}`}
-              {ev.location && ` · ${ev.location}`}
-            </p>
-            {ev.description && <p className="text-sm">{ev.description}</p>}
-          </div>
-        ))}
-      </div>
+      <h1 className="text-3xl font-bold mb-8">Upcoming Events</h1>
+      <PublicEventsClient events={events} currentUserId={userId} myRsvpEventIds={myRsvpEventIds} />
     </div>
   )
 }

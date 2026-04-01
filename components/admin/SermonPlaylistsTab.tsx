@@ -229,7 +229,7 @@ export default function SermonPlaylistsTab({ initialPlaylists, onSermonsChanged 
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {playlists.map((p) => (
-            <div key={p.id} className="border rounded-lg overflow-hidden bg-white">
+            <div key={p.id} className="border rounded-lg overflow-hidden bg-card">
               <div className="aspect-video bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center relative">
                 <ListVideo className="h-10 w-10 text-red-300" />
                 <a

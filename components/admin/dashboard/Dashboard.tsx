@@ -1,30 +1,43 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
-import { SlidersHorizontal, Megaphone, X, Move } from "lucide-react"
+import { useState, useCallback, useRef, useEffect } from "react"
+import { SlidersHorizontal, Megaphone, X, GripVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
+import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
-import ServiceRequestsWidget, { ServiceRequestItem } from "./ServiceRequestsWidget"
-import UpcomingServicesWidget, { UpcomingServiceItem } from "./UpcomingServicesWidget"
-import AnnouncementsWidget, { AnnouncementItem } from "./AnnouncementsWidget"
-import TasksWidget, { TaskItem } from "./TasksWidget"
-import EventsWidget, { EventItem } from "./EventsWidget"
-import MyProfileWidget, { UserProfileData } from "./MyProfileWidget"
-
-// react-grid-layout v1 uses CommonJS `export =`; require() avoids TS type issues
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const GridLayout = require("react-grid-layout")
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { WidthProvider } = require("react-grid-layout") as { WidthProvider: <T>(c: T) => T }
-const ResponsiveGridLayout = WidthProvider(GridLayout)
-type Layout = { i: string; x: number; y: number; w: number; h: number }
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import ServiceRequestsWidget, { type ServiceRequestItem } from "./ServiceRequestsWidget"
+import UpcomingServicesWidget, { type UpcomingServiceItem } from "./UpcomingServicesWidget"
+import AnnouncementsWidget, { type AnnouncementItem } from "./AnnouncementsWidget"
+import TasksWidget, { type TaskItem, type TeamTaskItem } from "./TasksWidget"
+import EventsWidget, { type EventItem } from "./EventsWidget"
+import MyProfileWidget, { type UserProfileData } from "./MyProfileWidget"
+import PinnedLinksWidget, { type PinnedLinkItem } from "./PinnedLinksWidget"
 
 const WIDGET_DEFS = [
   { id: "service-requests", label: "Service Requests" },
   { id: "upcoming-services", label: "Upcoming Services" },
   { id: "tasks",             label: "My Tasks" },
   { id: "events",            label: "Upcoming Events" },
+  { id: "pinned-links",      label: "Pinned Links" },
 ] as const
 
 type WidgetId = typeof WIDGET_DEFS[number]["id"]
@@ -37,10 +50,7 @@ interface WidgetRow {
 interface WidgetState {
   id: WidgetId
   visible: boolean
-  gridX: number
   gridY: number
-  gridW: number
-  gridH: number
 }
 
 interface Props {
@@ -48,10 +58,12 @@ interface Props {
   upcomingServices: UpcomingServiceItem[]
   announcements: AnnouncementItem[]
   tasks: TaskItem[]
+  teamTasks?: TeamTaskItem[]
   events: EventItem[]
+  pinnedLinks: PinnedLinkItem[]
   widgetRows: WidgetRow[]
   userProfile: UserProfileData | null
-  isAdmin: boolean
+  canPost: boolean
   timezone: string
 }
 
@@ -62,53 +74,81 @@ function buildWidgets(rows: WidgetRow[]): WidgetState[] {
     return {
       id: d.id,
       visible: saved?.visible ?? true,
-      gridX: saved?.gridX ?? (i % 2) * 6,
-      gridY: saved?.gridY ?? Math.floor(i / 2) * 4,
-      gridW: saved?.gridW ?? 6,
-      gridH: saved?.gridH ?? 4,
+      gridY: saved?.gridY ?? i * 4,
     }
   })
 }
+
+// ── Sortable item inside the Sheet ───────────────────────────────────────────
+
+interface SortableWidgetItemProps {
+  widget: WidgetState
+  label: string
+  onToggle: (id: WidgetId, visible: boolean) => void
+}
+
+function SortableWidgetItem({ widget, label, onToggle }: SortableWidgetItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: widget.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 py-3 border-b last:border-b-0"
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+        aria-label="Drag to reorder"
+        tabIndex={0}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <span className="flex-1 text-sm select-none">{label}</span>
+      <Switch
+        checked={widget.visible}
+        onCheckedChange={(checked) => onToggle(widget.id, checked)}
+      />
+    </div>
+  )
+}
+
+// ── Main Dashboard component ─────────────────────────────────────────────────
 
 export default function Dashboard({
   serviceRequests,
   upcomingServices,
   announcements: initialAnnouncements,
   tasks,
+  teamTasks,
   events,
+  pinnedLinks,
   widgetRows,
   userProfile,
-  isAdmin,
+  canPost,
   timezone,
 }: Props) {
   const [widgets, setWidgets] = useState<WidgetState[]>(() => buildWidgets(widgetRows))
   const [announcements, setAnnouncements] = useState(initialAnnouncements)
   const [banner, setBanner] = useState<AnnouncementItem | null>(null)
-  const [editing, setEditing] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const visible = widgets.filter((w) => w.visible)
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Always track the latest layout from react-grid-layout so stopEditing
-  // can read it synchronously, bypassing any pending setState batching.
-  const latestLayoutRef = useRef<Layout[]>([])
-
-  function handleLayoutChange(newLayout: Layout[]) {
-    latestLayoutRef.current = newLayout
-    if (!editing) return
-    setWidgets((prev) =>
-      prev.map((w) => {
-        const item = newLayout.find((l) => l.i === w.id)
-        if (!item) return w
-        return { ...w, gridX: item.x, gridY: item.y, gridW: item.w, gridH: item.h }
-      })
-    )
-  }
-
-  function toggleVisible(id: WidgetId, v: boolean) {
-    setWidgets((prev) => prev.map((w) => w.id === id ? { ...w, visible: v } : w))
-  }
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    }
+  }, [])
 
   const persistWidgets = useCallback(async (current: WidgetState[]) => {
     setSaving(true)
@@ -121,30 +161,59 @@ export default function Dashboard({
           visible: w.visible,
           order: 0,
           width: 1,
-          gridX: w.gridX,
+          gridX: 0,
           gridY: w.gridY,
-          gridW: w.gridW,
-          gridH: w.gridH,
+          gridW: 12,
+          gridH: 4,
         })),
       }),
     })
     setSaving(false)
     if (!res.ok) toast.error("Failed to save layout")
-    else toast.success("Layout saved")
   }, [])
 
-  function stopEditing() {
-    // Merge the latest react-grid-layout positions from the ref into widget state
-    // so we don't depend on setState batching order before persisting.
-    const latest = latestLayoutRef.current
-    const updatedWidgets = widgets.map((w) => {
-      const item = latest.find((l) => l.i === w.id)
-      if (!item) return w
-      return { ...w, gridX: item.x, gridY: item.y, gridW: item.w, gridH: item.h }
+  function scheduleAutoSave(next: WidgetState[]) {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => persistWidgets(next), 800)
+  }
+
+  function toggleVisible(id: WidgetId, visible: boolean) {
+    setWidgets((prev) => {
+      const next = prev.map((w) => w.id === id ? { ...w, visible } : w)
+      scheduleAutoSave(next)
+      return next
     })
-    setWidgets(updatedWidgets)
-    setEditing(false)
-    persistWidgets(updatedWidgets)
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(TouchSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  // All widgets sorted by gridY for the sheet list
+  const orderedAll = widgets.slice().sort((a, b) => a.gridY - b.gridY)
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    setWidgets((prev) => {
+      const sorted = prev.slice().sort((a, b) => a.gridY - b.gridY)
+      const oldIndex = sorted.findIndex((w) => w.id === active.id)
+      const newIndex = sorted.findIndex((w) => w.id === over.id)
+      const reordered = arrayMove(sorted, oldIndex, newIndex).map((w, i) => ({
+        ...w,
+        gridY: i * 4,
+      }))
+      // Rebuild full list with updated gridY values
+      const next = prev.map((w) => {
+        const updated = reordered.find((r) => r.id === w.id)
+        return updated ?? w
+      })
+      scheduleAutoSave(next)
+      return next
+    })
   }
 
   function handleNewAnnouncement(a: AnnouncementItem) {
@@ -156,10 +225,15 @@ export default function Dashboard({
     switch (id) {
       case "service-requests":  return <ServiceRequestsWidget slots={serviceRequests} timezone={timezone} />
       case "upcoming-services": return <UpcomingServicesWidget slots={upcomingServices} timezone={timezone} />
-      case "tasks":             return <TasksWidget tasks={tasks} />
+      case "tasks":             return <TasksWidget tasks={tasks} teamTasks={teamTasks} />
       case "events":            return <EventsWidget events={events} timezone={timezone} />
+      case "pinned-links":      return <PinnedLinksWidget links={pinnedLinks} />
     }
   }
+
+  const orderedVisible = widgets
+    .filter((w) => w.visible)
+    .sort((a, b) => a.gridY - b.gridY)
 
   return (
     <div className="space-y-4">
@@ -180,32 +254,12 @@ export default function Dashboard({
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <div className="flex gap-2">
-          {editing ? (
-            <Button size="sm" onClick={stopEditing} disabled={saving}>
-              {saving ? "Saving…" : "Done"}
-            </Button>
-          ) : (
-            <>
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                <Move className="h-4 w-4 mr-1.5" /> Edit Layout
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setCustomizeOpen(true)}>
-                <SlidersHorizontal className="h-4 w-4 mr-1.5" /> Widgets
-              </Button>
-            </>
-          )}
-        </div>
+        <Button variant="outline" size="sm" onClick={() => setCustomizeOpen(true)}>
+          <SlidersHorizontal className="h-4 w-4 mr-1.5" /> Customize
+        </Button>
       </div>
 
-      {/* Edit mode hint */}
-      {editing && (
-        <p className="text-xs text-muted-foreground">
-          Drag any widget to reposition it · Drag the corner handles to resize
-        </p>
-      )}
-
-      {/* ── Pinned top strip: My Profile + Announcements integrated ── */}
+      {/* Pinned top strip: My Profile + Announcements */}
       <div className="rounded-xl border bg-card overflow-hidden">
         <div className="flex flex-col sm:flex-row">
           {userProfile && (
@@ -216,77 +270,54 @@ export default function Dashboard({
           <div className={userProfile ? "flex-1 min-w-0 border-t sm:border-t-0 sm:border-l" : "w-full"}>
             <AnnouncementsWidget
               announcements={announcements}
-              isAdmin={isAdmin}
+              canPost={canPost}
               onNew={handleNewAnnouncement}
             />
           </div>
         </div>
       </div>
 
-      {/* ── Free-form draggable widget grid ── */}
-      {visible.length > 0 && (
-        <ResponsiveGridLayout
-          layout={visible.map((w) => ({ i: w.id, x: w.gridX, y: w.gridY, w: w.gridW, h: w.gridH }))}
-          cols={12}
-          rowHeight={72}
-          isDraggable={editing}
-          isResizable={editing}
-          resizeHandles={["se", "sw", "ne", "nw"]}
-          margin={[16, 16]}
-          containerPadding={[0, 0]}
-          compactType="vertical"
-          onLayoutChange={handleLayoutChange}
-          draggableCancel="button,a,input,textarea,select,[role=button]"
-          style={{ minHeight: editing ? 200 : undefined }}
-        >
-          {visible.map((w) => (
-            <div
-              key={w.id}
-              className={editing
-                ? "rounded-xl ring-2 ring-primary/25 ring-offset-0 cursor-grab active:cursor-grabbing"
-                : "overflow-hidden"
-              }
-            >
-              {renderWidget(w.id)}
-            </div>
+      {/* Widget grid */}
+      {orderedVisible.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {orderedVisible.map((w) => (
+            <div key={w.id}>{renderWidget(w.id)}</div>
           ))}
-        </ResponsiveGridLayout>
+        </div>
       )}
 
-      {/* Widgets dialog */}
-      <Dialog open={customizeOpen} onOpenChange={setCustomizeOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Manage Widgets</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">Choose which widgets to show on your dashboard.</p>
-          <ul className="space-y-2 mt-1">
-            {WIDGET_DEFS.map((d) => {
-              const w = widgets.find((x) => x.id === d.id)!
-              return (
-                <li key={d.id} className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id={`widget-${d.id}`}
-                    checked={w.visible}
-                    onChange={(e) => toggleVisible(d.id, e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 cursor-pointer"
+      {/* Customize Sheet */}
+      <Sheet open={customizeOpen} onOpenChange={setCustomizeOpen}>
+        <SheetContent side="right" className="w-80 sm:w-80">
+          <SheetHeader>
+            <SheetTitle>Customize Dashboard</SheetTitle>
+            <SheetDescription>Drag to reorder · Toggle to show/hide</SheetDescription>
+          </SheetHeader>
+          {saving && <p className="text-xs text-muted-foreground py-2">Saving…</p>}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={orderedAll.map((w) => w.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {orderedAll.map((w) => {
+                const def = WIDGET_DEFS.find((d) => d.id === w.id)!
+                return (
+                  <SortableWidgetItem
+                    key={w.id}
+                    widget={w}
+                    label={def.label}
+                    onToggle={toggleVisible}
                   />
-                  <label htmlFor={`widget-${d.id}`} className="text-sm cursor-pointer select-none flex-1">
-                    {d.label}
-                  </label>
-                </li>
-              )
-            })}
-          </ul>
-          <div className="flex gap-2 pt-2">
-            <Button size="sm" onClick={() => { persistWidgets(widgets); setCustomizeOpen(false) }} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setCustomizeOpen(false)}>Cancel</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+                )
+              })}
+            </SortableContext>
+          </DndContext>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

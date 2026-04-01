@@ -1,21 +1,31 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Check, Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, Upload, X } from "lucide-react"
 import { TIMEZONES, getUtcOffset } from "@/lib/timezones"
+
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
 
 const ROLES = ["VISITOR", "MEMBER", "LEADER", "ADMIN"] as const
 const FEATURES = [
   { key: "services",  label: "Services" },
   { key: "teams",     label: "Teams" },
+  { key: "chat",      label: "Chat" },
   { key: "users",     label: "Users" },
-  { key: "offerings", label: "Offerings" },
+  { key: "offerings", label: "Giving" },
   { key: "sermons",   label: "Sermons" },
   { key: "events",    label: "Events" },
 ] as const
@@ -23,7 +33,7 @@ const FEATURES = [
 interface CustomLabel { id: string; label: string; description: string }
 
 const DEFAULT_PERMISSIONS = {
-  features: { services: "VISITOR", teams: "MEMBER", users: "LEADER", offerings: "LEADER", sermons: "VISITOR", events: "VISITOR" },
+  features: { services: "VISITOR", teams: "MEMBER", chat: "VISITOR", users: "LEADER", offerings: "LEADER", sermons: "VISITOR", events: "VISITOR" },
   roles: {
     VISITOR: { label: "Visitor",  description: "New or guest attendees tracked for people care." },
     MEMBER:  { label: "Member",   description: "Regular church members." },
@@ -39,6 +49,9 @@ interface Settings {
   logoUrl: string | null
   timezone: string
   permissions: unknown
+  stripePublishableKey: string | null
+  stripeSecretKey: string | null
+  stripeWebhookSecret: string | null
 }
 
 export default function SettingsManager({ settings: init }: { settings: Settings }) {
@@ -47,7 +60,26 @@ export default function SettingsManager({ settings: init }: { settings: Settings
   const [name, setName] = useState(init.name)
   const [logoUrl, setLogoUrl] = useState(init.logoUrl ?? "")
   const [timezone, setTimezone] = useState(init.timezone ?? "UTC")
-  const [brandSaving, setBrandSaving] = useState(false)
+  const logoInputRef = useRef<HTMLInputElement>(null)
+
+  const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved">("")
+  const isMountedBrand = useRef(false)
+  const isMountedPerm = useRef(false)
+
+  const [stripePk, setStripePk] = useState(init.stripePublishableKey ?? "")
+  const [stripeSk, setStripeSk] = useState(init.stripeSecretKey ?? "")
+  const [stripeWh, setStripeWh] = useState(init.stripeWebhookSecret ?? "")
+  const [stripeSaving, setStripeSaving] = useState(false)
+  const [stripeSaved, setStripeSaved] = useState(false)
+
+  async function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) { toast.error("Logo must be under 2 MB"); return }
+    const dataUrl = await readFileAsDataURL(file)
+    setLogoUrl(dataUrl)
+    e.target.value = ""
+  }
 
   const [features, setFeatures] = useState<Record<string, string>>(
     { ...DEFAULT_PERMISSIONS.features, ...(perms.features ?? {}) }
@@ -58,8 +90,6 @@ export default function SettingsManager({ settings: init }: { settings: Settings
   const [customLabels, setCustomLabels] = useState<CustomLabel[]>(
     (perms as typeof DEFAULT_PERMISSIONS).customLabels ?? []
   )
-  const [permSaving, setPermSaving] = useState(false)
-
   function addCustomLabel() {
     setCustomLabels([...customLabels, { id: crypto.randomUUID(), label: "", description: "" }])
   }
@@ -73,29 +103,77 @@ export default function SettingsManager({ settings: init }: { settings: Settings
   }
 
   async function saveBranding() {
-    setBrandSaving(true)
+    setSaveStatus("saving")
     const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, logoUrl: logoUrl || null, timezone }),
     })
-    setBrandSaving(false)
-    res.ok ? toast.success("Branding saved") : toast.error("Failed to save branding")
+    if (res.ok) {
+      setSaveStatus("saved")
+      setTimeout(() => setSaveStatus(""), 2000)
+    } else {
+      setSaveStatus("")
+      toast.error("Failed to save branding")
+    }
   }
 
   async function savePermissions() {
-    setPermSaving(true)
+    setSaveStatus("saving")
     const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ permissions: { features, roles: roleMeta, customLabels } }),
     })
-    setPermSaving(false)
-    res.ok ? toast.success("Permissions saved") : toast.error("Failed to save permissions")
+    if (res.ok) {
+      setSaveStatus("saved")
+      setTimeout(() => setSaveStatus(""), 2000)
+    } else {
+      setSaveStatus("")
+      toast.error("Failed to save permissions")
+    }
   }
+
+  async function saveStripe() {
+    setStripeSaving(true)
+    const body: Record<string, string | null> = { stripePublishableKey: stripePk || null }
+    if (!stripeSk.includes("****")) body.stripeSecretKey = stripeSk || null
+    if (!stripeWh.includes("****")) body.stripeWebhookSecret = stripeWh || null
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    setStripeSaving(false)
+    if (res.ok) {
+      setStripeSaved(true)
+      setTimeout(() => setStripeSaved(false), 2000)
+    } else {
+      toast.error("Failed to save Stripe keys")
+    }
+  }
+
+  // Auto-save branding with 800 ms debounce
+  useEffect(() => {
+    if (!isMountedBrand.current) { isMountedBrand.current = true; return }
+    const timer = setTimeout(() => { saveBranding() }, 800)
+    return () => clearTimeout(timer)
+  }, [name, logoUrl, timezone]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save permissions with 800 ms debounce
+  useEffect(() => {
+    if (!isMountedPerm.current) { isMountedPerm.current = true; return }
+    const timer = setTimeout(() => { savePermissions() }, 800)
+    return () => clearTimeout(timer)
+  }, [features, roleMeta, customLabels]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6">
+      {/* ── Auto-save status ── */}
+      <div className="flex justify-end h-4">
+        {saveStatus === "saving" && <span className="text-xs text-muted-foreground">Saving…</span>}
+        {saveStatus === "saved"  && <span className="text-xs text-emerald-600">Saved</span>}
+      </div>
       {/* ── Branding ── */}
       <Card>
         <CardHeader><CardTitle className="text-base">Branding</CardTitle></CardHeader>
@@ -105,11 +183,26 @@ export default function SettingsManager({ settings: init }: { settings: Settings
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ordinary Ministry" />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Logo URL</label>
-            <Input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…/logo.png" />
-            {logoUrl && (
-              <img src={logoUrl} alt="Logo preview" className="mt-2 h-12 object-contain rounded border p-1" />
-            )}
+            <label className="text-xs font-medium text-muted-foreground">Logo</label>
+            <div className="flex items-center gap-3">
+              {logoUrl && (
+                <img src={logoUrl} alt="Logo preview" className="h-10 w-10 object-contain rounded border p-1 shrink-0" />
+              )}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => logoInputRef.current?.click()}>
+                  <Upload className="h-3.5 w-3.5" />
+                  {logoUrl ? "Replace" : "Upload"}
+                </Button>
+                {logoUrl && (
+                  <Button type="button" variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => setLogoUrl("")}>
+                    <X className="h-3.5 w-3.5" />
+                    Remove
+                  </Button>
+                )}
+              </div>
+              <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoFile} />
+            </div>
+            <p className="text-xs text-muted-foreground">JPG, PNG, SVG up to 2 MB.</p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Timezone</label>
@@ -124,9 +217,6 @@ export default function SettingsManager({ settings: init }: { settings: Settings
               </SelectContent>
             </Select>
           </div>
-          <Button size="sm" onClick={saveBranding} disabled={brandSaving}>
-            <Check className="h-3.5 w-3.5 mr-1" /> {brandSaving ? "Saving…" : "Save Branding"}
-          </Button>
         </CardContent>
       </Card>
 
@@ -225,9 +315,55 @@ export default function SettingsManager({ settings: init }: { settings: Settings
               </div>
             ))}
           </div>
-          <Button size="sm" onClick={savePermissions} disabled={permSaving} className="mt-2">
-            <Check className="h-3.5 w-3.5 mr-1" /> {permSaving ? "Saving…" : "Save Permissions"}
-          </Button>
+        </CardContent>
+      </Card>
+
+      {/* ── Stripe Connection ── */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Stripe Connection</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Connect your Stripe account to accept online giving. Find your keys in the{" "}
+            <span className="font-medium text-foreground">Stripe Dashboard → Developers → API keys</span>.
+          </p>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Publishable Key</label>
+            <Input
+              value={stripePk}
+              onChange={(e) => setStripePk(e.target.value)}
+              placeholder="pk_live_..."
+              className="font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Secret Key</label>
+            <Input
+              type="password"
+              value={stripeSk}
+              onChange={(e) => setStripeSk(e.target.value)}
+              placeholder="sk_live_..."
+              className="font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Webhook Secret</label>
+            <Input
+              type="password"
+              value={stripeWh}
+              onChange={(e) => setStripeWh(e.target.value)}
+              placeholder="whsec_..."
+              className="font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">
+              In Stripe Dashboard, create a webhook pointing to <code className="bg-muted px-1 rounded text-[11px]">/api/webhooks/stripe</code> with the <code className="bg-muted px-1 rounded text-[11px]">checkout.session.completed</code> event.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button size="sm" onClick={saveStripe} disabled={stripeSaving}>
+              {stripeSaving ? "Saving…" : "Save Keys"}
+            </Button>
+            {stripeSaved && <span className="text-xs text-emerald-600">Saved</span>}
+          </div>
         </CardContent>
       </Card>
     </div>

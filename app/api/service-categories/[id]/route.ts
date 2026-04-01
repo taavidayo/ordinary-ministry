@@ -36,6 +36,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             title: service.title?.trim() || category.name,
             description: service.notes || null,
             startDate: service.date,
+            category: category.name,
           },
         })
         await db.service.update({

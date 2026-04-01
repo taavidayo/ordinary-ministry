@@ -18,6 +18,15 @@ export async function POST(req: Request) {
   const { name, description } = body
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 })
 
-  const team = await db.team.create({ data: { name, description } })
+  const team = await db.team.create({
+    data: {
+      name,
+      description,
+      members: {
+        create: { userId: session.user.id as string, isLeader: true },
+      },
+    },
+    include: { members: { include: { user: true } }, channels: { select: { id: true, name: true }, take: 1 } },
+  })
   return NextResponse.json(team, { status: 201 })
 }

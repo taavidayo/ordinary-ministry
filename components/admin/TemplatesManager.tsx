@@ -84,7 +84,7 @@ export default function TemplatesManager({ templates: init }: Props) {
                 )}
               </div>
               <div className="flex gap-1 shrink-0">
-                <Link href={`/admin/services/templates/${t.id}`}>
+                <Link href={`/mychurch/services/templates/${t.id}`}>
                   <Button variant="outline" size="icon" className="h-8 w-8">
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>

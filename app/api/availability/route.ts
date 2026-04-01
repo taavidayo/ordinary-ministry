@@ -39,11 +39,17 @@ export async function POST(req: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const { userId, date, note } = await req.json()
+  const { userId, date, note, allDay, startTime, endTime } = await req.json()
+  const data = {
+    note: note ?? null,
+    allDay: allDay !== false,
+    startTime: allDay !== false ? null : (startTime ?? null),
+    endTime: allDay !== false ? null : (endTime ?? null),
+  }
   const record = await db.availability.upsert({
     where: { userId_date: { userId, date: new Date(date) } },
-    update: { note },
-    create: { userId, date: new Date(date), note },
+    update: data,
+    create: { userId, date: new Date(date), ...data },
   })
   return NextResponse.json(record, { status: 201 })
 }

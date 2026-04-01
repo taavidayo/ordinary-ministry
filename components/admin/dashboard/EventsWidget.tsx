@@ -34,17 +34,17 @@ export default function EventsWidget({ events, timezone }: Props) {
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <CalendarCheck className="h-4 w-4" />
-          Upcoming Events
+          My Events
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto">
         {events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No upcoming events.</p>
+          <p className="text-sm text-muted-foreground">No upcoming events you&apos;re signed up for.</p>
         ) : (
           <ul className="space-y-3">
             {events.map((e) => (
               <li key={e.id}>
-                <Link href="/admin/events" className="group block">
+                <Link href="/mychurch/events" className="group block">
                   <p className="text-sm font-medium group-hover:underline">{e.title}</p>
                   <p className="text-xs text-muted-foreground">
                     {formatDateRange(e.startDate, e.endDate, timezone)}

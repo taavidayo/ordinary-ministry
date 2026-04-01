@@ -4,8 +4,9 @@ import { useState, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { CheckSquare, Plus, Trash2 } from "lucide-react"
+import { CheckSquare, Plus, Trash2, Users, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
+import Link from "next/link"
 
 export interface TaskItem {
   id: string
@@ -14,11 +15,24 @@ export interface TaskItem {
   createdAt: string
 }
 
-interface Props {
-  tasks: TaskItem[]
+export interface TeamTaskItem {
+  id: string
+  content: string
+  done: boolean
+  teamId: string
+  teamName: string
+  projectId: string | null
+  projectName: string | null
+  dueDate: string | null
+  priority: string
 }
 
-export default function TasksWidget({ tasks: initial }: Props) {
+interface Props {
+  tasks: TaskItem[]
+  teamTasks?: TeamTaskItem[]
+}
+
+export default function TasksWidget({ tasks: initial, teamTasks }: Props) {
   const [tasks, setTasks] = useState(initial)
   const [newContent, setNewContent] = useState("")
   const [adding, setAdding] = useState(false)
@@ -149,6 +163,26 @@ export default function TasksWidget({ tasks: initial }: Props) {
           >
             <Plus className="h-3.5 w-3.5" /> Add task
           </button>
+        )}
+
+        {/* Team Tasks (read-only) */}
+        {teamTasks && teamTasks.length > 0 && (
+          <div className="pt-3 border-t space-y-1">
+            <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+              <Users className="h-3.5 w-3.5" /> Team Tasks
+            </p>
+            {teamTasks.filter(t => !t.done).map((t) => {
+              const href = `/mychurch/teams/${t.teamId}?tab=tasks&task=${t.id}`
+              return (
+                <Link key={t.id} href={href} className="flex items-center gap-2 group/tt hover:bg-accent rounded px-1 -mx-1 transition-colors">
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 shrink-0" />
+                  <span className="text-sm flex-1 min-w-0 truncate">{t.content}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{t.projectName ?? t.teamName}</span>
+                  <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover/tt:opacity-100 shrink-0 transition-opacity" />
+                </Link>
+              )
+            })}
+          </div>
         )}
       </CardContent>
     </Card>

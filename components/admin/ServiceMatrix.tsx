@@ -57,8 +57,8 @@ const TYPE_COLORS: Record<ProgramItemType, string> = {
   SONG: "bg-blue-100 text-blue-700",
   SERMON: "bg-purple-100 text-purple-700",
   PRAYER: "bg-green-100 text-green-700",
-  ITEM: "bg-gray-100 text-gray-700",
-  HEADER: "bg-gray-200 text-gray-600",
+  ITEM: "bg-muted text-gray-700",
+  HEADER: "bg-border text-gray-600",
 }
 
 function getInitials(name: string): string {
@@ -576,10 +576,10 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
                 setActiveSeriesServiceId(null)
               }}
               className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-colors ${
-                !activeSeriesId ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-gray-50"
+                !activeSeriesId ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-accent/50"
               }`}
             >
-              <div className="w-full aspect-square rounded-md border-2 border-dashed border-muted-foreground/20 flex items-center justify-center bg-gray-50">
+              <div className="w-full aspect-square rounded-md border-2 border-dashed border-muted-foreground/20 flex items-center justify-center bg-muted/50">
                 <X className="h-6 w-6 text-muted-foreground/30" />
               </div>
               <span className="text-xs text-muted-foreground">None</span>
@@ -595,7 +595,7 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
                     setActiveSeriesServiceId(null)
                   }}
                   className={`w-full flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-colors ${
-                    activeSeriesId === s.id ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-gray-50"
+                    activeSeriesId === s.id ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-accent/50"
                   }`}
                 >
                   <div className="w-full aspect-square rounded-md overflow-hidden">
@@ -624,7 +624,7 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
             <button
               type="button"
               onClick={() => { setActiveSeriesServiceId(null); setNewSeriesOpen(true) }}
-              className="flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 border-dashed border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-gray-50 transition-colors"
+              className="flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 border-dashed border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-accent/50 transition-colors"
             >
               <div className="w-full aspect-square rounded-md flex items-center justify-center">
                 <Plus className="h-8 w-8 text-muted-foreground/30" />
@@ -766,8 +766,8 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
                       disabled={blocked}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
                         blocked
-                          ? "opacity-60 cursor-not-allowed bg-gray-50"
-                          : "hover:bg-gray-50 hover:ring-1 hover:ring-gray-200"
+                          ? "opacity-60 cursor-not-allowed bg-muted/50"
+                          : "hover:bg-accent/50 hover:ring-1 hover:ring-gray-200"
                       }`}
                     >
                       <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold shrink-0">
@@ -852,9 +852,9 @@ function ServiceColumn({
   const dateLabel = dateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 
   return (
-    <div className="w-72 flex-shrink-0 flex flex-col bg-white border rounded-lg overflow-hidden">
+    <div className="w-72 flex-shrink-0 flex flex-col bg-card border rounded-lg overflow-hidden">
       {/* ── Sticky header ─────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 bg-white border-b px-3 pt-3 pb-2 space-y-2">
+      <div className="sticky top-0 z-10 bg-card border-b px-3 pt-3 pb-2 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground">{dateLabel}</p>
@@ -863,9 +863,9 @@ function ServiceColumn({
             </p>
           </div>
           <Link
-            href={`/admin/services/${service.id}`}
+            href={`/mychurch/services/${service.id}`}
             title="Open full planner"
-            className="shrink-0 h-7 w-7 inline-flex items-center justify-center rounded border bg-white hover:bg-gray-50 text-muted-foreground"
+            className="shrink-0 h-7 w-7 inline-flex items-center justify-center rounded border bg-card hover:bg-accent/50 text-muted-foreground"
           >
             <ExternalLink className="h-3.5 w-3.5" />
           </Link>
@@ -875,7 +875,7 @@ function ServiceColumn({
         <button
           type="button"
           onClick={onOpenSeriesPicker}
-          className="w-full flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 transition-colors text-left group"
+          className="w-full flex items-center gap-2 py-1 px-1.5 rounded hover:bg-accent/50 transition-colors text-left group"
         >
           {currentSeries?.imageUrl ? (
             <img
@@ -901,7 +901,7 @@ function ServiceColumn({
         <button
           type="button"
           onClick={onOpenTemplateImport}
-          className="w-full flex items-center gap-1.5 py-1 px-1.5 rounded text-xs text-muted-foreground hover:bg-gray-50 hover:text-foreground transition-colors"
+          className="w-full flex items-center gap-1.5 py-1 px-1.5 rounded text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
         >
           <LayoutTemplate className="h-3.5 w-3.5 shrink-0" />
           Import Template
@@ -932,7 +932,7 @@ function ServiceColumn({
                     key={item.id}
                     draggable
                     onDragStart={(e) => onItemDragStart(e, item, time.id)}
-                    className="flex items-center gap-1.5 py-1 px-1 rounded cursor-grab hover:bg-gray-50 group/item"
+                    className="flex items-center gap-1.5 py-1 px-1 rounded cursor-grab hover:bg-accent/50 group/item"
                   >
                     <span className={`text-[10px] px-1 py-0.5 rounded font-medium shrink-0 ${TYPE_COLORS[item.type]}`}>
                       {TYPE_LABELS[item.type]}
@@ -995,13 +995,13 @@ function ServiceColumn({
                         <button
                           type="button"
                           onClick={() => onUpdateNeeded(role.id, Math.max(0, roleNeeded - 1))}
-                          className="h-3.5 w-3.5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-gray-100 leading-none opacity-0 group-hover/role:opacity-100 transition-opacity text-[11px]"
+                          className="h-3.5 w-3.5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent leading-none opacity-0 group-hover/role:opacity-100 transition-opacity text-[11px]"
                         >−</button>
                         <span className="text-[10px] w-3.5 text-center tabular-nums text-muted-foreground/30 group-hover/role:text-muted-foreground transition-colors">{roleNeeded}</span>
                         <button
                           type="button"
                           onClick={() => onUpdateNeeded(role.id, roleNeeded + 1)}
-                          className="h-3.5 w-3.5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-gray-100 leading-none opacity-0 group-hover/role:opacity-100 transition-opacity text-[11px]"
+                          className="h-3.5 w-3.5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent leading-none opacity-0 group-hover/role:opacity-100 transition-opacity text-[11px]"
                         >+</button>
                       </div>
                       {stillNeeded > 0 && (

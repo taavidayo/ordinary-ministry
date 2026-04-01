@@ -36,6 +36,7 @@ export async function PATCH(
     if (body.arrangementId !== undefined) syncFields.arrangementId = body.arrangementId
     if (body.name !== undefined) syncFields.name = body.name
     if (body.sermonPassage !== undefined) syncFields.sermonPassage = body.sermonPassage
+    if (body.key !== undefined) syncFields.key = body.key
     if (Object.keys(syncFields).length > 0) {
       await db.programItem.updateMany({
         where: { syncGroupId: item.syncGroupId, id: { not: itemId } },

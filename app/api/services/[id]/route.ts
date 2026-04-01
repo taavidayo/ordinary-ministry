@@ -70,6 +70,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         data: {
           title: eventTitle,
           startDate: eventDate,
+          category: service.category?.name ?? null,
           ...(body.notes !== undefined && { description: body.notes || null }),
         },
       })
@@ -80,6 +81,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           title: eventTitle,
           description: service.notes || null,
           startDate: eventDate,
+          published: true,
+          category: service.category?.name ?? null,
         },
       })
       await db.service.update({

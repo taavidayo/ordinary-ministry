@@ -2,26 +2,31 @@
 
 import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import ServicesBottomNav from "@/components/admin/ServicesBottomNav"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
-import { Trash2, GripVertical, Plus, BookOpen, Users, Search, Check, X, ChevronDown, Pencil, Link2, Clock, Mail, MoreHorizontal, ChevronLeft, ChevronRight, AlertTriangle, LayoutTemplate, Layers, Upload } from "lucide-react"
+import { Trash2, GripVertical, Plus, BookOpen, Users, Search, Check, X, ChevronDown, Pencil, Link2, Clock, Mail, MoreHorizontal, ChevronLeft, ChevronRight, AlertTriangle, LayoutTemplate, Layers, Upload, ClipboardList } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import ServiceChecklist from "@/components/admin/team/ServiceChecklist"
 
 type ProgramItemType = "SONG" | "SERMON" | "PRAYER" | "ITEM" | "HEADER"
 
-interface User { id: string; name: string; email: string }
+interface User { id: string; name: string; email: string; avatar: string | null }
 interface Role { id: string; name: string; needed: number }
 interface Slot { id: string; role: Role; user: User | null; status: string; rehearsal: boolean; notes: string | null }
-interface ServiceTeam { id: string; team: { id: string; name: string }; serviceTimeId: string | null; slots: Slot[] }
+interface ServiceChecklistItem { id: string; content: string; order: number; done: boolean }
+interface ServiceTeam { id: string; team: { id: string; name: string }; serviceTimeId: string | null; slots: Slot[]; checklistItems: ServiceChecklistItem[] }
 interface Series { id: string; name: string; imageUrl: string | null }
 interface Template { id: string; name: string; description: string | null }
-interface Arrangement { id: string; name: string }
+interface Arrangement { id: string; name: string; chordproText: string; lengthSeconds: number | null; bpm: number | null; meter: string | null }
 interface SongBasic { id: string; title: string; author: string | null }
 interface SongWithArrangements extends SongBasic { arrangements: Arrangement[] }
 interface ProgramItem {
@@ -31,6 +36,7 @@ interface ProgramItem {
   name: string | null
   notes: string | null
   sermonPassage: string | null
+  key: string | null
   song: SongBasic | null
   arrangement: Arrangement | null
   syncGroupId: string | null
@@ -51,7 +57,8 @@ interface ServiceScheduleEntry {
   startTime: string | null
   order: number
 }
-interface Team { id: string; name: string; roles: Role[]; members: { user: User }[] }
+interface TeamChecklist { id: string; name: string }
+interface Team { id: string; name: string; roles: Role[]; members: { user: User }[]; checklists: TeamChecklist[] }
 export interface ServicePlannerService {
   id: string
   title: string
@@ -72,6 +79,7 @@ interface Props {
   allTemplates: Template[]
   prevId: string | null
   nextId: string | null
+  currentUserId?: string
 }
 
 const TYPE_LABELS: Record<ProgramItemType, string> = {
@@ -86,15 +94,24 @@ const TYPE_COLORS: Record<ProgramItemType, string> = {
   SONG: "bg-blue-100 text-blue-700",
   SERMON: "bg-purple-100 text-purple-700",
   PRAYER: "bg-green-100 text-green-700",
-  ITEM: "bg-gray-100 text-gray-700",
-  HEADER: "bg-gray-200 text-gray-600",
+  ITEM: "bg-muted text-gray-700",
+  HEADER: "bg-border text-gray-600",
+}
+
+const MUSIC_KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+const FLAT_LABELS: Record<string, string> = {
+  "C#": "C#/Db", "D#": "D#/Eb", "F#": "F#/Gb", "G#": "G#/Ab", "A#": "A#/Bb",
+}
+function extractSongKey(chordproText: string): string | null {
+  const m = chordproText.match(/\{key:\s*([A-G][#b]?)\s*\}/i)
+  return m ? m[1] : null
 }
 
 function getInitials(name: string): string {
   return name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
 }
 
-export default function ServicePlanner({ service: init, allSongs, allTeams, allSeries, allTemplates, prevId, nextId }: Props) {
+export default function ServicePlanner({ service: init, allSongs, allTeams, allSeries, allTemplates, prevId, nextId, currentUserId = "" }: Props) {
   // ── Series + blockout state ───────────────────────────────────────────────────
   const [seriesId, setSeriesId] = useState(init.seriesId ?? "")
   const [seriesList, setSeriesList] = useState<Series[]>(allSeries)
@@ -116,6 +133,67 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
     allTeams.forEach((t) => t.roles.forEach((r) => { m[r.id] = r.needed }))
     return m
   })
+
+  // ── Checklist assignment state ────────────────────────────────────────────
+  // assignedByTeam: serviceTeamId → Set of assigned templateChecklistIds
+  const [assignedByTeam, setAssignedByTeam] = useState<Record<string, Set<string>>>(() => {
+    const m: Record<string, Set<string>> = {}
+    for (const st of init.teams) {
+      const ids = new Set<string>()
+      for (const item of st.checklistItems ?? []) {
+        if ((item as unknown as { templateChecklistId?: string }).templateChecklistId) {
+          ids.add((item as unknown as { templateChecklistId: string }).templateChecklistId)
+        }
+      }
+      m[st.id] = ids
+    }
+    return m
+  })
+  // checklistKey increments to force ServiceChecklist to re-fetch after assignment changes
+  const [checklistKey, setChecklistKey] = useState(0)
+  const [checklistModuleOpen, setChecklistModuleOpen] = useState(true)
+
+  type MobilePlannerSection = "program" | "teams" | "schedule" | "checklist"
+  const [mobilePlannerSection, setMobilePlannerSection] = useState<MobilePlannerSection>("program")
+
+  async function assignChecklist(serviceTeamId: string, checklistId: string) {
+    const res = await fetch(`/api/services/${init.id}/teams/${serviceTeamId}/checklist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checklistId }),
+    })
+    if (res.ok) {
+      setAssignedByTeam(prev => {
+        const next = new Set(prev[serviceTeamId] ?? [])
+        next.add(checklistId)
+        return { ...prev, [serviceTeamId]: next }
+      })
+      setChecklistKey(k => k + 1)
+      toast.success("Checklist assigned")
+    } else {
+      const body = await res.json().catch(() => ({}))
+      toast.error(body.error ?? `Failed to assign checklist (${res.status})`)
+    }
+  }
+
+  async function unassignChecklist(serviceTeamId: string, checklistId: string) {
+    const res = await fetch(`/api/services/${init.id}/teams/${serviceTeamId}/checklist`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checklistId }),
+    })
+    if (res.ok) {
+      setAssignedByTeam(prev => {
+        const next = new Set(prev[serviceTeamId] ?? [])
+        next.delete(checklistId)
+        return { ...prev, [serviceTeamId]: next }
+      })
+      setChecklistKey(k => k + 1)
+    } else {
+      const body = await res.json().catch(() => ({}))
+      toast.error(body.error ?? `Failed to remove checklist (${res.status})`)
+    }
+  }
 
   useEffect(() => {
     const dateStr = new Date(init.date).toISOString().split("T")[0]
@@ -193,7 +271,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
     const res = await fetch(`/api/services/${init.id}`, { method: "DELETE" })
     setDeletingService(false)
     if (!res.ok) { toast.error("Failed to delete service"); return }
-    window.location.href = "/admin/services"
+    window.location.href = "/mychurch/services"
   }
 
   async function importTemplate() {
@@ -394,6 +472,12 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
   const [dragging, setDragging] = useState<number | null>(null)
   const [draggingInTimeId, setDraggingInTimeId] = useState<string | null>(null)
 
+  // ── Palette (add item dropdown) state ─────────────────────────────────────────
+  const [paletteOpenForTimeId, setPaletteOpenForTimeId] = useState<string | null>(null)
+  const [paletteDragActive, setPaletteDragActive] = useState(false)
+  const [paletteDropTarget, setPaletteDropTarget] = useState<{ timeId: string; index: number } | null>(null)
+  const paletteDragTypeRef = useRef<ProgramItemType | "SYNCED" | null>(null)
+
   // ── Hover state for trash icon ───────────────────────────────────────────────
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
 
@@ -402,7 +486,10 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
   const [editName, setEditName] = useState("")
   const [editNotes, setEditNotes] = useState("")
   const [editArrId, setEditArrId] = useState("")
+  const [editSongSearch, setEditSongSearch] = useState("")
+  const [editSongId, setEditSongId] = useState("")
   const [editSermonPassage, setEditSermonPassage] = useState("")
+  const [editKey, setEditKey] = useState("")
   const [editSaving, setEditSaving] = useState(false)
 
   // ── Link panel (sync across services) ───────────────────────────────────────
@@ -444,6 +531,9 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
     setEditNotes(item.notes ?? "")
     setEditSermonPassage(item.sermonPassage ?? "")
     setEditArrId(item.arrangement?.id ?? "")
+    setEditSongSearch("")
+    setEditSongId("")
+    setEditKey(item.key ?? "")
   }
 
   function cancelEdit() {
@@ -462,7 +552,9 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
         name: (item.type === "SERMON" || item.type === "ITEM" || item.type === "HEADER") ? (editName || null) : undefined,
         notes: item.type !== "HEADER" ? (editNotes || null) : undefined,
         ...(item.type === "SERMON" ? { sermonPassage: editSermonPassage || null } : {}),
-        ...(item.type === "SONG" && editArrId ? { arrangementId: editArrId } : {}),
+        ...(item.type === "SONG" && editSongId ? { songId: editSongId, arrangementId: editArrId || undefined } :
+            item.type === "SONG" && editArrId ? { arrangementId: editArrId } : {}),
+        ...(item.type === "SONG" ? { key: editKey || null } : {}),
       }),
     })
     setEditSaving(false)
@@ -480,6 +572,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                 ...(updated.name !== undefined && { name: updated.name }),
                 ...(updated.sermonPassage !== undefined && { sermonPassage: updated.sermonPassage }),
                 ...(updated.arrangement && { arrangementId: updated.arrangementId, arrangement: updated.arrangement }),
+              ...(updated.key !== undefined && { key: updated.key }),
               }
             }
             return it
@@ -570,6 +663,41 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
     const all = await res.json()
     setLinkServices(all)
     setAddLinkLoading(false)
+  }
+
+  async function quickAddItem(type: ProgramItemType | "SYNCED", timeId: string, insertAt?: number) {
+    setPaletteOpenForTimeId(null)
+    if (type === "SYNCED") {
+      resetAddForm()
+      await selectSyncedType()
+      setAddingItemForTimeId(timeId)
+      return
+    }
+    const timeItems = times.find((t) => t.id === timeId)?.items ?? []
+    const res = await fetch(`/api/services/${init.id}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ serviceTimeId: timeId, type, order: timeItems.length }),
+    })
+    if (!res.ok) { toast.error("Failed to add item"); return }
+    const newItem = await res.json()
+
+    if (insertAt !== undefined && insertAt < timeItems.length) {
+      const reordered = [
+        ...timeItems.slice(0, insertAt),
+        newItem,
+        ...timeItems.slice(insertAt),
+      ].map((it, idx) => ({ ...it, order: idx }))
+      setTimes((prev) => prev.map((t) => t.id === timeId ? { ...t, items: reordered } : t))
+      await fetch(`/api/services/${init.id}/items`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reordered.map(({ id, order }) => ({ id, order }))),
+      })
+    } else {
+      setTimes((prev) => prev.map((t) => t.id === timeId ? { ...t, items: [...t.items, { ...newItem, order: t.items.length }] } : t))
+    }
+    startEdit(newItem)
   }
 
   async function addItem(timeId: string) {
@@ -746,6 +874,8 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
 
   // ── Drag-and-drop ────────────────────────────────────────────────────────────
   function handleDragStart(i: number, timeId: string) {
+    setPaletteOpenForTimeId(null)
+    setPaletteDragActive(false)
     setDragging(i)
     setDraggingInTimeId(timeId)
   }
@@ -776,7 +906,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-24 md:pb-0">
       {/* ── Page header ──────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -812,20 +942,20 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex gap-0.5">
               {prevId ? (
-                <Link href={`/admin/services/${prevId}`} className="inline-flex items-center justify-center h-6 w-6 rounded border bg-white hover:bg-gray-50 text-muted-foreground">
+                <Link href={`/mychurch/services/${prevId}`} className="inline-flex items-center justify-center h-6 w-6 rounded border bg-card hover:bg-accent/50 text-muted-foreground">
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </Link>
               ) : (
-                <span className="inline-flex items-center justify-center h-6 w-6 rounded border bg-white text-muted-foreground/30">
+                <span className="inline-flex items-center justify-center h-6 w-6 rounded border bg-card text-muted-foreground/30">
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </span>
               )}
               {nextId ? (
-                <Link href={`/admin/services/${nextId}`} className="inline-flex items-center justify-center h-6 w-6 rounded border bg-white hover:bg-gray-50 text-muted-foreground">
+                <Link href={`/mychurch/services/${nextId}`} className="inline-flex items-center justify-center h-6 w-6 rounded border bg-card hover:bg-accent/50 text-muted-foreground">
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Link>
               ) : (
-                <span className="inline-flex items-center justify-center h-6 w-6 rounded border bg-white text-muted-foreground/30">
+                <span className="inline-flex items-center justify-center h-6 w-6 rounded border bg-card text-muted-foreground/30">
                   <ChevronRight className="h-3.5 w-3.5" />
                 </span>
               )}
@@ -869,12 +999,9 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
 
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" asChild>
-            <Link href={`/admin/songbook?serviceId=${init.id}`}>
+            <Link href={`/mychurch/songbook?serviceId=${init.id}`}>
               <BookOpen className="h-4 w-4 mr-1" /> Open Songbook
             </Link>
-          </Button>
-          <Button variant="outline" size="icon" className="text-muted-foreground hover:text-destructive hover:border-destructive" onClick={() => setDeleteServiceOpen(true)} title="Delete service">
-            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
 
@@ -900,14 +1027,33 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
         </Dialog>
       </div>
 
-      <div className="grid gap-4 grid-cols-[260px_1fr]">
-        {/* Left column */}
-        <div className="space-y-2">
+      {/* ── Mobile chips nav ─────────────────────────────────────────────── */}
+      <div className="md:hidden flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {(["program", "teams", "schedule", "checklist"] as const).map((sec) => (
+          <button
+            key={sec}
+            onClick={() => setMobilePlannerSection(sec)}
+            className={cn(
+              "shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
+              mobilePlannerSection === sec
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-muted-foreground border-border hover:border-muted-foreground"
+            )}
+          >
+            {sec === "program" ? "Program Order" : sec === "teams" ? "Teams" : sec === "schedule" ? "Schedule" : "Checklist"}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-[260px_1fr]">
+        {/* Left column — hidden on mobile; shown per chip */}
+        <div className={cn("space-y-2", mobilePlannerSection === "program" ? "hidden md:block" : "")}>
           {/* ── Schedule section ─────────────────────────────────────────── */}
-          <div className="border rounded-lg overflow-hidden bg-white">
+          <div className={cn(mobilePlannerSection !== "schedule" ? "hidden md:block" : "")}>
+          <div className="border rounded-lg overflow-hidden bg-card">
             <button
               type="button"
-              className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-gray-50 text-left"
+              className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-accent/50 text-left"
               onClick={() => setScheduleOpen(!scheduleOpen)}
             >
               <span className="text-sm font-semibold flex items-center gap-1.5">
@@ -944,7 +1090,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                     ) : (
                       <button
                         type="button"
-                        className="w-full flex items-center gap-1 text-left hover:bg-gray-50 rounded px-1 py-0.5"
+                        className="w-full flex items-center gap-1 text-left hover:bg-accent/50 rounded px-1 py-0.5"
                         onClick={() => { setEditTimeStartValue(time.startTime || ""); setEditingTimeStartId(time.id) }}
                       >
                         <span className="text-xs font-medium flex-1 truncate">{time.label}</span>
@@ -988,7 +1134,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          className="flex-1 flex items-center gap-1 text-left hover:bg-gray-50 rounded px-1 py-0.5"
+                          className="flex-1 flex items-center gap-1 text-left hover:bg-accent/50 rounded px-1 py-0.5"
                           onClick={() => { setEditScheduleLabel(entry.label); setEditScheduleTime(entry.startTime || ""); setEditingScheduleId(entry.id) }}
                         >
                           <span className="text-xs flex-1 truncate">{entry.label}</span>
@@ -1037,18 +1183,43 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
               </div>
             )}
           </div>
+          </div>{/* end schedule mobile wrapper */}
+
+          {/* ── Consolidated Checklist module ─────────────────────────── */}
+          <div className={cn(mobilePlannerSection !== "checklist" ? "hidden md:block" : "")}>
+          {teams.some(st => (assignedByTeam[st.id]?.size ?? 0) > 0) && (
+            <div className="border rounded-lg overflow-hidden bg-card">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-accent/50 text-left"
+                onClick={() => setChecklistModuleOpen(o => !o)}
+              >
+                <span className="text-sm font-semibold flex items-center gap-1.5">
+                  <ClipboardList className="h-3.5 w-3.5" /> Checklist
+                </span>
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-150 ${checklistModuleOpen ? "" : "-rotate-90"}`} />
+              </button>
+              {checklistModuleOpen && (
+                <div className="border-t px-3.5 py-3">
+                  <ServiceChecklist key={checklistKey} serviceId={init.id} currentUserId={currentUserId} />
+                </div>
+              )}
+            </div>
+          )}
+          </div>{/* end checklist mobile wrapper */}
 
           {/* ── Teams grouped by service time ────────────────────────────── */}
+          <div className={cn(mobilePlannerSection !== "teams" ? "hidden md:block" : "")}>
           {[...times.map((t) => ({ key: t.id, label: t.label })), { key: "general", label: "General" }].map(({ key, label }) => {
             const timeTeams = key === "general"
               ? teams.filter((st) => st.serviceTimeId === null)
               : teams.filter((st) => st.serviceTimeId === key)
             const isOpen = teamsOpenByTimeId[key] !== false
             return (
-              <div key={key} className="border rounded-lg overflow-hidden bg-white">
+              <div key={key} className="border rounded-lg overflow-hidden bg-card">
                 <button
                   type="button"
-                  className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-gray-50 text-left"
+                  className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-accent/50 text-left"
                   onClick={() => setTeamsOpenByTimeId((prev) => ({ ...prev, [key]: !isOpen }))}
                 >
                   <span className="text-sm font-semibold">
@@ -1070,7 +1241,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                             <span className="text-xs font-semibold">{st.team.name}</span>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <button type="button" className="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-gray-100">
+                                <button type="button" className="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-accent">
                                   <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
                                 </button>
                               </DropdownMenuTrigger>
@@ -1127,13 +1298,13 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                   <div className="flex items-center gap-0.5">
                                     <button
                                       type="button"
-                                      className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-gray-100 leading-none opacity-0 group-hover/role:opacity-100 transition-opacity"
+                                      className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent leading-none opacity-0 group-hover/role:opacity-100 transition-opacity"
                                       onClick={() => updateNeeded(role.id, Math.max(0, roleNeeded - 1))}
                                     >−</button>
                                     <span className="text-xs w-4 text-center tabular-nums text-muted-foreground/30 group-hover/role:text-muted-foreground transition-colors">{roleNeeded}</span>
                                     <button
                                       type="button"
-                                      className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-gray-100 leading-none opacity-0 group-hover/role:opacity-100 transition-opacity"
+                                      className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent leading-none opacity-0 group-hover/role:opacity-100 transition-opacity"
                                       onClick={() => updateNeeded(role.id, roleNeeded + 1)}
                                     >+</button>
                                   </div>
@@ -1155,9 +1326,12 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                           type="button"
                                           onClick={() => openSlotDialog(slot, role.name, st)}
                                           title={slot.user!.name}
-                                          className={`w-8 h-8 rounded-full bg-secondary ring-2 ${statusRing} flex items-center justify-center text-xs font-semibold hover:opacity-80 transition-opacity`}
+                                          className={`w-8 h-8 rounded-full bg-secondary ring-2 ${statusRing} flex items-center justify-center text-xs font-semibold hover:opacity-80 transition-opacity overflow-hidden`}
                                         >
-                                          {getInitials(slot.user!.name)}
+                                          {slot.user!.avatar
+                                            ? <img src={slot.user!.avatar} alt={slot.user!.name} className="w-full h-full object-cover" />
+                                            : getInitials(slot.user!.name)
+                                          }
                                         </button>
                                         <span className="text-[10px] text-muted-foreground leading-none max-w-[40px] truncate text-center">
                                           {slot.user!.name.split(" ")[0]}
@@ -1204,6 +1378,53 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                           {allRoles.length === 0 && (
                             <p className="text-xs text-muted-foreground">No roles defined for this team.</p>
                           )}
+
+                          {/* ── Checklist Assignment ───────────────────── */}
+                          {(() => {
+                            const teamDef2 = allTeams.find(t => t.id === st.team.id)
+                            const availableChecklists = teamDef2?.checklists ?? []
+                            const assigned = assignedByTeam[st.id] ?? new Set()
+                            if (availableChecklists.length === 0) return null
+                            return (
+                              <div className="mt-3 border-t pt-2.5">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-xs font-medium text-muted-foreground">Checklists</span>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button type="button" className="text-xs flex items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors">
+                                        <Plus className="h-3 w-3" /> Assign
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      {availableChecklists.filter(cl => !assigned.has(cl.id)).map(cl => (
+                                        <DropdownMenuItem key={cl.id} onSelect={() => assignChecklist(st.id, cl.id)}>
+                                          {cl.name}
+                                        </DropdownMenuItem>
+                                      ))}
+                                      {availableChecklists.every(cl => assigned.has(cl.id)) && (
+                                        <DropdownMenuItem disabled>All checklists assigned</DropdownMenuItem>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                                {assigned.size === 0 && (
+                                  <p className="text-xs text-muted-foreground italic">No checklists assigned.</p>
+                                )}
+                                {availableChecklists.filter(cl => assigned.has(cl.id)).map(cl => (
+                                  <div key={cl.id} className="flex items-center gap-1 py-0.5">
+                                    <span className="text-xs flex-1">{cl.name}</span>
+                                    <button
+                                      type="button"
+                                      className="text-muted-foreground hover:text-destructive transition-colors"
+                                      onClick={() => unassignChecklist(st.id, cl.id)}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          })()}
                         </div>
                       )
                     })}
@@ -1233,10 +1454,11 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
               </div>
             )
           })}
+          </div>{/* end teams mobile wrapper */}
         </div>
 
         {/* Program Order — RIGHT */}
-        <Card>
+        <Card className={cn(mobilePlannerSection !== "program" ? "hidden md:block" : "")}>
           <CardHeader className="flex flex-row items-center justify-between py-3 gap-2">
             <CardTitle className="text-base">Program Order</CardTitle>
             <div className="flex items-center gap-2 shrink-0">
@@ -1270,7 +1492,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                       "w-full text-left px-3 py-2.5 rounded-lg border transition-colors",
                       selectedTemplateId === t.id
                         ? "border-primary bg-primary/5"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
+                        : "border-gray-200 hover:border-gray-300 hover:bg-accent/50",
                     ].join(" ")}
                   >
                     <p className="text-sm font-medium">{t.name}</p>
@@ -1363,15 +1585,58 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                       </button>
                     )}
 
-                    <div className="ml-auto flex items-center gap-1.5">
+                    <div className="ml-auto flex items-center gap-1.5 relative">
                       <Button
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs px-2 shrink-0"
-                        onClick={() => { resetAddForm(); setAddingItemForTimeId(time.id) }}
+                        onClick={() => setPaletteOpenForTimeId((prev) => prev === time.id ? null : time.id)}
                       >
                         <Plus className="h-3 w-3 mr-0.5" /> Add Item
                       </Button>
+                      {paletteOpenForTimeId === time.id && (
+                        <div className="absolute right-0 top-full z-20 mt-1 bg-card border rounded-md shadow-md p-2 flex flex-wrap gap-1.5 min-w-[200px]">
+                          {(["SONG", "SERMON", "PRAYER", "ITEM", "HEADER"] as ProgramItemType[]).map((t) => (
+                            <button
+                              key={t}
+                              draggable
+                              onDragStart={(e) => {
+                                paletteDragTypeRef.current = t
+                                setPaletteDragActive(true)
+                                e.dataTransfer.effectAllowed = "copy"
+                                setPaletteOpenForTimeId(null)
+                              }}
+                              onDragEnd={() => {
+                                paletteDragTypeRef.current = null
+                                setPaletteDragActive(false)
+                                setPaletteDropTarget(null)
+                              }}
+                              onClick={() => quickAddItem(t, time.id)}
+                              className={`px-3 py-1.5 rounded text-xs font-medium cursor-grab active:cursor-grabbing select-none ${TYPE_COLORS[t]}`}
+                            >
+                              {TYPE_LABELS[t]}
+                            </button>
+                          ))}
+                          <button
+                            draggable
+                            onDragStart={(e) => {
+                              paletteDragTypeRef.current = "SYNCED"
+                              setPaletteDragActive(true)
+                              e.dataTransfer.effectAllowed = "copy"
+                              setPaletteOpenForTimeId(null)
+                            }}
+                            onDragEnd={() => {
+                              paletteDragTypeRef.current = null
+                              setPaletteDragActive(false)
+                              setPaletteDropTarget(null)
+                            }}
+                            onClick={() => quickAddItem("SYNCED", time.id)}
+                            className="px-3 py-1.5 rounded text-xs font-medium cursor-grab active:cursor-grabbing select-none bg-green-100 text-green-700 flex items-center gap-1"
+                          >
+                            <Link2 className="h-3 w-3" /> Synced
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1379,30 +1644,11 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                   {!isCollapsed && (
                     <div className="px-4 pb-3 space-y-2">
                       {addingItemForTimeId === time.id && (
-                        <div className="border rounded p-3 space-y-2 bg-blue-50">
-                          {/* Type selector */}
-                          <div className="flex gap-2 flex-wrap">
-                            {(["SONG", "SERMON", "PRAYER", "ITEM", "HEADER"] as ProgramItemType[]).map((t) => (
-                              <button
-                                key={t}
-                                type="button"
-                                onClick={() => { setItemType(t); setSongSearch(""); setSelectedSongId(""); setSelectedArrId("") }}
-                                className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
-                                  itemType === t ? TYPE_COLORS[t] + " border-current" : "bg-white text-muted-foreground border-gray-200"
-                                }`}
-                              >
-                                {TYPE_LABELS[t]}
-                              </button>
-                            ))}
-                            <button
-                              type="button"
-                              onClick={selectSyncedType}
-                              className={`px-3 py-1 rounded text-xs font-medium border transition-colors flex items-center gap-1 ${
-                                itemType === "SYNCED" ? "bg-green-100 text-green-700 border-current" : "bg-white text-muted-foreground border-gray-200"
-                              }`}
-                            >
-                              <Link2 className="h-3 w-3" /> Synced Item
-                            </button>
+                        <div className="border rounded p-3 space-y-2 bg-muted/50">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${TYPE_COLORS[itemType as ProgramItemType] ?? "bg-green-100 text-green-700"}`}>
+                              {itemType === "SYNCED" ? "Synced Item" : TYPE_LABELS[itemType as ProgramItemType]}
+                            </span>
                           </div>
 
                           {itemType === "SYNCED" && (
@@ -1465,7 +1711,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                 />
                               </div>
                               {songSearch && (
-                                <div className="border rounded bg-white max-h-40 overflow-y-auto divide-y">
+                                <div className="border rounded bg-card max-h-40 overflow-y-auto divide-y">
                                   {filteredSongs.length === 0 ? (
                                     <p className="text-xs text-muted-foreground p-2">No songs found.</p>
                                   ) : (
@@ -1473,7 +1719,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                       <button
                                         key={s.id}
                                         onClick={() => { setSelectedSongId(s.id); setSelectedArrId(""); setSongSearch(s.title) }}
-                                        className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${selectedSongId === s.id ? "bg-blue-50" : ""}`}
+                                        className={`w-full text-left px-3 py-2 text-sm hover:bg-accent/50 ${selectedSongId === s.id ? "bg-accent" : ""}`}
                                       >
                                         <span className="font-medium">{s.title}</span>
                                         {s.author && <span className="text-muted-foreground ml-1">— {s.author}</span>}
@@ -1549,34 +1795,90 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                         </div>
                       )}
 
-                      {timeItems.length === 0 && addingItemForTimeId !== time.id && (
+                      {timeItems.length === 0 && !addingItemForTimeId && !paletteDragActive && (
                         <p className="text-sm text-muted-foreground text-center py-4">No items yet.</p>
                       )}
 
-                      {timeItems.map((item, i) => (
+                      {/* Drop zone at top (index 0) when palette dragging */}
+                      {paletteDragActive && (
                         <div
-                          key={item.id}
-                          draggable={editingId !== item.id}
-                          onDragStart={() => editingId !== item.id && handleDragStart(i, time.id)}
-                          onDragOver={(e) => editingId !== item.id && handleDragOver(e, i, time.id)}
-                          onDragEnd={() => editingId !== item.id && handleDragEnd(time.id)}
-                          onClick={() => editingId !== item.id && startEdit(item)}
-                          onMouseEnter={() => setHoveredItemId(item.id)}
-                          onMouseLeave={() => setHoveredItemId(null)}
-                          className={`border rounded bg-white ${editingId === item.id ? "p-3" : item.type === "HEADER" ? "flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer" : "flex items-start gap-2 p-2 hover:bg-gray-50 cursor-pointer"}`}
-                        >
+                          onDragOver={(e) => { e.preventDefault(); setPaletteDropTarget({ timeId: time.id, index: 0 }) }}
+                          onDragLeave={() => setPaletteDropTarget(null)}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            const t = paletteDragTypeRef.current
+                            if (t) quickAddItem(t, time.id, 0)
+                            setPaletteDropTarget(null)
+                          }}
+                          className={`rounded transition-all mb-1 ${paletteDropTarget?.timeId === time.id && paletteDropTarget?.index === 0 ? "h-8 bg-primary/10 border-2 border-dashed border-primary/40" : "h-2"}`}
+                        />
+                      )}
+
+                      {timeItems.map((item, i) => (
+                        <div key={item.id} className="space-y-1">
+                          <div
+                            draggable={editingId !== item.id && !paletteDragActive}
+                            onDragStart={() => editingId !== item.id && !paletteDragActive && handleDragStart(i, time.id)}
+                            onDragOver={(e) => {
+                              if (paletteDragActive) { e.preventDefault(); return }
+                              editingId !== item.id && handleDragOver(e, i, time.id)
+                            }}
+                            onDragEnd={() => editingId !== item.id && !paletteDragActive && handleDragEnd(time.id)}
+                            onClick={() => editingId !== item.id && startEdit(item)}
+                            onMouseEnter={() => setHoveredItemId(item.id)}
+                            onMouseLeave={() => setHoveredItemId(null)}
+                            className={`border rounded ${item.type === "HEADER" ? "bg-muted" : "bg-card"} ${editingId === item.id ? "p-3" : item.type === "HEADER" ? "flex items-center gap-2 p-2 hover:bg-accent cursor-pointer" : "flex items-start gap-2 p-2 hover:bg-accent/50 cursor-pointer"}`}
+                          >
                           {editingId === item.id ? (
                             <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center gap-1.5">
                                 <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[item.type]}`}>
                                   {TYPE_LABELS[item.type]}
                                 </span>
-                                {item.type === "SONG" && (
-                                  <span className="text-sm font-medium">{item.song?.title}</span>
+                                {item.type === "SONG" && item.song && (
+                                  <span className="text-sm font-medium">{item.song.title}</span>
                                 )}
                               </div>
                               {item.type === "SERMON" && !item.name && (
                                 <p className="text-xs text-muted-foreground">Fill in the sermon details below</p>
+                              )}
+                              {item.type === "SONG" && !item.song && (
+                                <>
+                                  <div className="relative">
+                                    <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                                    <Input
+                                      className="pl-7 h-8 text-sm"
+                                      placeholder="Search songs…"
+                                      value={editSongSearch}
+                                      onChange={(e) => { setEditSongSearch(e.target.value); setEditSongId("") }}
+                                      autoFocus
+                                    />
+                                  </div>
+                                  {editSongSearch && (
+                                    <div className="border rounded bg-card max-h-40 overflow-y-auto divide-y">
+                                      {allSongs.filter(s => s.title.toLowerCase().includes(editSongSearch.toLowerCase()) || (s.author?.toLowerCase().includes(editSongSearch.toLowerCase()) ?? false)).length === 0
+                                        ? <p className="text-xs text-muted-foreground p-2">No songs found.</p>
+                                        : allSongs.filter(s => s.title.toLowerCase().includes(editSongSearch.toLowerCase()) || (s.author?.toLowerCase().includes(editSongSearch.toLowerCase()) ?? false)).map((s) => (
+                                          <button key={s.id} onClick={() => { setEditSongId(s.id); setEditSongSearch(s.title); setEditArrId("") }} className={`w-full text-left px-3 py-2 text-sm hover:bg-accent/50 ${editSongId === s.id ? "bg-accent" : ""}`}>
+                                            <span className="font-medium">{s.title}</span>
+                                            {s.author && <span className="text-muted-foreground ml-1">— {s.author}</span>}
+                                          </button>
+                                        ))
+                                      }
+                                    </div>
+                                  )}
+                                  {editSongId && (() => {
+                                    const song = allSongs.find(s => s.id === editSongId)
+                                    return song ? (
+                                      <Select value={editArrId} onValueChange={setEditArrId}>
+                                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select arrangement…" /></SelectTrigger>
+                                        <SelectContent>
+                                          {song.arrangements.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : null
+                                  })()}
+                                </>
                               )}
                               {item.type === "ITEM" && (
                                 <Input
@@ -1613,7 +1915,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                   />
                                 </>
                               )}
-                              {item.type === "SONG" && (
+                              {item.type === "SONG" && item.song && (
                                 <Select value={editArrId} onValueChange={setEditArrId}>
                                   <SelectTrigger className="h-8 text-sm">
                                     <SelectValue placeholder="Select arrangement…" />
@@ -1624,6 +1926,28 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                     ))}
                                   </SelectContent>
                                 </Select>
+                              )}
+                              {item.type === "SONG" && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground shrink-0">Key</span>
+                                  <Select value={editKey} onValueChange={setEditKey}>
+                                    <SelectTrigger className="h-8 text-sm flex-1">
+                                      <SelectValue placeholder="— from chart —" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="">— from chart —</SelectItem>
+                                      {MUSIC_KEYS.map(k => (
+                                        <SelectItem key={k} value={k}>{FLAT_LABELS[k] ?? k}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {editKey && (
+                                    <button type="button" onClick={() => setEditKey("")}
+                                      className="text-xs text-muted-foreground hover:text-foreground">
+                                      Clear
+                                    </button>
+                                  )}
+                                </div>
                               )}
                               {item.type !== "HEADER" && (
                                 <NotesEditor
@@ -1732,7 +2056,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                 <>
                                   <div className="flex-1 flex items-center gap-2 min-w-0">
                                     <div className="flex-1 h-px bg-gray-300" />
-                                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
+                                    <span className="text-xs font-bold text-gray-600 uppercase tracking-wide whitespace-nowrap">
                                       {item.name || "Section"}
                                     </span>
                                     <div className="flex-1 h-px bg-gray-300" />
@@ -1748,7 +2072,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                 </>
                               ) : (
                                 <>
-                                  <span className="text-sm text-muted-foreground w-5 shrink-0 mt-0.5">{i + 1}.</span>
+
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[item.type]}`}>
@@ -1765,7 +2089,25 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                       </p>
                                     </div>
                                     {item.type === "SONG" && item.arrangement && (
-                                      <Badge variant="outline" className="text-xs mt-0.5">{item.arrangement.name}</Badge>
+                                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                        <Badge variant="outline" className="text-xs">{item.arrangement.name}</Badge>
+                                        {(item.key || extractSongKey(item.arrangement.chordproText)) && (
+                                          <Badge variant="secondary" className="text-xs font-mono">
+                                            {item.key || extractSongKey(item.arrangement.chordproText)}
+                                          </Badge>
+                                        )}
+                                        {item.arrangement.bpm != null && (
+                                          <span className="text-xs text-muted-foreground">{item.arrangement.bpm} BPM</span>
+                                        )}
+                                        {item.arrangement.meter && (
+                                          <span className="text-xs text-muted-foreground">{item.arrangement.meter}</span>
+                                        )}
+                                        {item.arrangement.lengthSeconds != null && (
+                                          <span className="text-xs text-muted-foreground">
+                                            {Math.floor(item.arrangement.lengthSeconds / 60)}:{String(item.arrangement.lengthSeconds % 60).padStart(2, "0")}
+                                          </span>
+                                        )}
+                                      </div>
                                     )}
                                     {item.type === "SERMON" && item.sermonPassage && (
                                       <p className="text-xs text-muted-foreground mt-0.5">📖 {item.sermonPassage}</p>
@@ -1789,6 +2131,21 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                               )}
                             </>
                           )}
+                          </div>
+                          {/* Drop zone after this item */}
+                          {paletteDragActive && (
+                            <div
+                              onDragOver={(e) => { e.preventDefault(); setPaletteDropTarget({ timeId: time.id, index: i + 1 }) }}
+                              onDragLeave={() => setPaletteDropTarget(null)}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                const t = paletteDragTypeRef.current
+                                if (t) quickAddItem(t, time.id, i + 1)
+                                setPaletteDropTarget(null)
+                              }}
+                              className={`rounded transition-all ${paletteDropTarget?.timeId === time.id && paletteDropTarget?.index === i + 1 ? "h-8 bg-primary/10 border-2 border-dashed border-primary/40" : "h-2"}`}
+                            />
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1799,6 +2156,20 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Delete service — bottom ───────────────────────────────────────── */}
+      <div className="border-t pt-4">
+        <button
+          type="button"
+          onClick={() => setDeleteServiceOpen(true)}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-destructive transition-colors"
+        >
+          <Trash2 className="h-4 w-4" /> Delete Service
+        </button>
+      </div>
+
+      {/* ── Bottom nav (mobile) ────────────────────────────────────────────── */}
+      <ServicesBottomNav active="planner" />
 
       {/* ── Slot detail dialog ─────────────────────────────────────────────── */}
       <Dialog open={!!slotDialog} onOpenChange={(open) => { if (!open) setSlotDialog(null) }}>
@@ -1826,7 +2197,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                       key={s}
                       type="button"
                       onClick={() => setDialogStatus(s)}
-                      className={`flex-1 text-xs py-1.5 rounded border font-medium transition-colors ${isActive ? active : "border-gray-200 text-muted-foreground hover:bg-gray-50"}`}
+                      className={`flex-1 text-xs py-1.5 rounded border font-medium transition-colors ${isActive ? active : "border-gray-200 text-muted-foreground hover:bg-accent/50"}`}
                     >
                       {icon} {s.charAt(0) + s.slice(1).toLowerCase()}
                     </button>
@@ -1962,10 +2333,10 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
               type="button"
               onClick={() => { updateSeries(""); setSeriesPickerOpen(false) }}
               className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-colors ${
-                !seriesId ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-gray-50"
+                !seriesId ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-accent/50"
               }`}
             >
-              <div className="w-full aspect-square rounded-md border-2 border-dashed border-muted-foreground/20 flex items-center justify-center bg-gray-50">
+              <div className="w-full aspect-square rounded-md border-2 border-dashed border-muted-foreground/20 flex items-center justify-center bg-muted/50">
                 <X className="h-6 w-6 text-muted-foreground/30" />
               </div>
               <span className="text-xs text-muted-foreground">None</span>
@@ -1978,7 +2349,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                   type="button"
                   onClick={() => { updateSeries(s.id); setSeriesPickerOpen(false) }}
                   className={`w-full flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-colors ${
-                    seriesId === s.id ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-gray-50"
+                    seriesId === s.id ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-accent/50"
                   }`}
                 >
                   <div className="w-full aspect-square rounded-md overflow-hidden">
@@ -2008,7 +2379,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
             <button
               type="button"
               onClick={() => { setSeriesPickerOpen(false); setNewSeriesOpen(true) }}
-              className="flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 border-dashed border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-gray-50 transition-colors"
+              className="flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 border-dashed border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-accent/50 transition-colors"
             >
               <div className="w-full aspect-square rounded-md flex items-center justify-center">
                 <Plus className="h-8 w-8 text-muted-foreground/30" />
@@ -2118,12 +2489,15 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                       disabled={blocked}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
                         blocked
-                          ? "opacity-60 cursor-not-allowed bg-gray-50"
-                          : "hover:bg-gray-50 hover:ring-1 hover:ring-gray-200"
+                          ? "opacity-60 cursor-not-allowed bg-muted/50"
+                          : "hover:bg-accent/50 hover:ring-1 hover:ring-gray-200"
                       }`}
                     >
-                      <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold shrink-0">
-                        {getInitials(user.name)}
+                      <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold shrink-0 overflow-hidden">
+                        {user.avatar
+                          ? <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                          : getInitials(user.name)
+                        }
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">{user.name}</p>
@@ -2233,7 +2607,7 @@ function NotesEditor({
     e.target.value = ""
   }
 
-  const btn = "inline-flex items-center text-xs px-2 py-0.5 rounded border bg-white hover:bg-gray-50 text-muted-foreground"
+  const btn = "inline-flex items-center text-xs px-2 py-0.5 rounded border bg-card hover:bg-accent/50 text-muted-foreground"
 
   return (
     <div className="space-y-1">

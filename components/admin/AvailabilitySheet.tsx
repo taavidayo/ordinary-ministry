@@ -7,21 +7,24 @@ import AvailabilityManager from "@/components/admin/AvailabilityManager"
 
 interface Props {
   userId: string
+  trigger?: React.ReactNode
 }
 
-export default function AvailabilitySheet({ userId }: Props) {
+export default function AvailabilitySheet({ userId, trigger }: Props) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="outline">
-          <CalendarOff className="h-4 w-4 mr-1" /> My Availability
-        </Button>
+        {trigger ?? (
+          <Button variant="outline">
+            <CalendarOff className="h-4 w-4 mr-1" /> My Availability
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>My Availability</DialogTitle>
           <p className="text-sm text-muted-foreground">
-            Click a future date to block it. Click a blocked date to remove it.
+            Click a date to block it out. Click a blocked date to remove it. Use the settings icon to set scheduling preferences.
           </p>
         </DialogHeader>
         <AvailabilityManager userId={userId} />

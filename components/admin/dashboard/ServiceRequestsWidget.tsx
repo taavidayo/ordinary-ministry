@@ -61,7 +61,7 @@ export default function ServiceRequestsWidget({ slots: initial, timezone }: Prop
               <li key={s.id} className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium leading-tight">
-                    <Link href={`/admin/services/${s.serviceTeam.service.id}`} className="hover:underline">
+                    <Link href={`/mychurch/services/${s.serviceTeam.service.id}`} className="hover:underline">
                       {s.serviceTeam.service.title ||
                         new Date(s.serviceTeam.service.date).toLocaleDateString("en-US", {
                           weekday: "short", month: "short", day: "numeric", timeZone: timezone,

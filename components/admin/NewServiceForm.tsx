@@ -98,9 +98,9 @@ export default function NewServiceForm({ categories, templates, allSeries, onSuc
     if (onSuccess) {
       onSuccess(created.map((s) => s.id))
     } else if (created.length === 1) {
-      router.push(`/admin/services/${created[0].id}`)
+      router.push(`/mychurch/services/${created[0].id}`)
     } else {
-      router.push("/admin/services")
+      router.push("/mychurch/services")
     }
   }
 
@@ -211,12 +211,23 @@ export default function NewServiceForm({ categories, templates, allSeries, onSuc
             onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
             className="w-24"
           />
-          {quantity > 1 && firstDate && (
-            <p className="text-xs text-muted-foreground">
-              Creates {quantity} services every 7 days starting{" "}
-              {new Date(firstDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
-            </p>
-          )}
+          {firstDate && quantity >= 1 && (() => {
+            const dates = generateDates()
+            const categoryName = categories.find((c) => c.id === categoryId)?.name
+            const label = title.trim() || categoryName || "Service"
+            return (
+              <ul className="mt-2 space-y-1">
+                {dates.map((d, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="w-4 text-right shrink-0 text-muted-foreground/60">{i + 1}.</span>
+                    <span className="font-medium text-foreground">{label}</span>
+                    <span>—</span>
+                    <span>{new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span>
+                  </li>
+                ))}
+              </ul>
+            )
+          })()}
         </div>
       </div>
 
