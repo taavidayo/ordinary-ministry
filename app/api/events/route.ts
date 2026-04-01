@@ -12,19 +12,27 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await req.json()
-  const { title, description, startDate, endDate, location, imageUrl } = body
+  const { title, description, startDate, endDate, location, imageUrl, category, published, rsvpEnabled } = body
   if (!title || !startDate)
     return NextResponse.json({ error: "title and startDate required" }, { status: 400 })
 
-  const event = await db.event.create({
-    data: {
-      title,
-      description,
-      startDate: new Date(startDate),
-      endDate: endDate ? new Date(endDate) : null,
-      location,
-      imageUrl,
-    },
-  })
-  return NextResponse.json(event, { status: 201 })
+  try {
+    const event = await db.event.create({
+      data: {
+        title,
+        description: description ?? null,
+        startDate: new Date(startDate),
+        endDate: endDate ? new Date(endDate) : null,
+        location: location ?? null,
+        imageUrl: imageUrl ?? null,
+        category: category || null,
+        published: published === true,
+        rsvpEnabled: rsvpEnabled === true,
+      },
+    })
+    return NextResponse.json(event, { status: 201 })
+  } catch (e) {
+    console.error("[events POST] error:", e)
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
 }

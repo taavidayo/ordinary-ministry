@@ -13,7 +13,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     select: {
       id: true, name: true, email: true, role: true, phone: true,
       avatar: true, birthday: true, address: true, gender: true,
-      socialProfiles: true, createdAt: true,
+      socialProfiles: true, createdAt: true, canViewGiving: true,
       teamMemberships: { include: { team: { select: { id: true, name: true } } } },
       serviceSlots: {
         where: { userId: id },
@@ -50,7 +50,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const body = await req.json()
-  const { password, teamIds, role, birthday, socialProfiles, address, gender, avatar, ...rest } = body
+  const { password, teamIds, role, birthday, socialProfiles, address, gender, avatar,
+          memberCategoryId, ministryId, ...rest } = body
 
   const data: Record<string, unknown> = {}
 
@@ -74,6 +75,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   // Role changes: ADMIN only
   if (role !== undefined && isAdmin) data.role = role
+
+  // Category / Ministry — admin or leader only
+  if (isAdmin || isLeader) {
+    if (memberCategoryId !== undefined) data.memberCategoryId = memberCategoryId || null
+    if (ministryId !== undefined) data.ministryId = ministryId || null
+    if (isAdmin && body.canViewGiving !== undefined) data.canViewGiving = !!body.canViewGiving
+  }
 
   // Password change
   if (password && (isAdmin || isSelf)) {

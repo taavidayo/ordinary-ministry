@@ -9,13 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import {
   Plus, Trash2, ChevronLeft, X, ChevronDown, Pencil, Check,
-  GripVertical, Clock, Users,
+  GripVertical, Clock, Users, UserPlus,
 } from "lucide-react"
 
 type ItemType = "SONG" | "SERMON" | "PRAYER" | "ITEM" | "HEADER"
 
-interface TemplateItem { id: string; type: ItemType; name: string | null; order: number }
-interface TemplateTeamEntry { id: string; team: { id: string; name: string }; templateTimeId: string | null }
+interface TemplateItem { id: string; type: ItemType; name: string | null; order: number; neededRoles: string[] }
+
+interface TemplateTeamEntry { id: string; team: { id: string; name: string; roles: { id: string; name: string }[] }; templateTimeId: string | null }
 interface TemplateTime {
   id: string
   label: string
@@ -30,7 +31,7 @@ interface Template {
   times: TemplateTime[]
   templateTeams: TemplateTeamEntry[]
 }
-interface Team { id: string; name: string }
+interface Team { id: string; name: string; roles: { id: string; name: string }[] }
 
 interface Props {
   template: Template
@@ -42,12 +43,20 @@ const TYPE_COLORS: Record<ItemType, string> = {
   SONG: "bg-blue-100 text-blue-700",
   SERMON: "bg-purple-100 text-purple-700",
   PRAYER: "bg-green-100 text-green-700",
-  ITEM: "bg-gray-100 text-gray-700",
-  HEADER: "bg-gray-200 text-gray-600",
+  ITEM: "bg-muted text-gray-700",
+  HEADER: "bg-border text-gray-600",
+}
+
+function normalizeItem(item: TemplateItem): TemplateItem {
+  return { ...item, neededRoles: Array.isArray(item.neededRoles) ? item.neededRoles : [] }
+}
+
+function normalizeTemplate(t: Template): Template {
+  return { ...t, times: t.times.map(time => ({ ...time, items: time.items.map(normalizeItem) })) }
 }
 
 export default function TemplateEditor({ template: init, allTeams }: Props) {
-  const [template, setTemplate] = useState(init)
+  const [template, setTemplate] = useState(() => normalizeTemplate(init as unknown as Template))
   const [name, setName] = useState(init.name)
   const [description, setDescription] = useState(init.description ?? "")
   const [editingName, setEditingName] = useState(false)
@@ -71,6 +80,8 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
   const [itemType, setItemType] = useState<ItemType>("ITEM")
   const [itemName, setItemName] = useState("")
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
+  const [rolesOpenForItemId, setRolesOpenForItemId] = useState<string | null>(null)
+  const [roleInput, setRoleInput] = useState("")
 
   // ── Name/description ────────────────────────────────────────────────────────
   async function saveName() {
@@ -177,6 +188,21 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
     }
   }
 
+  async function patchItemRoles(timeId: string, itemId: string, neededRoles: string[]) {
+    setTemplate(prev => ({
+      ...prev,
+      times: prev.times.map(t => t.id === timeId
+        ? { ...t, items: t.items.map(i => i.id === itemId ? { ...i, neededRoles } : i) }
+        : t
+      ),
+    }))
+    await fetch(`/api/templates/${template.id}/times/${timeId}/items/${itemId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ neededRoles }),
+    })
+  }
+
   // ── Teams ───────────────────────────────────────────────────────────────────
   async function addTeam(teamId: string, templateTimeId: string | null) {
     if (template.templateTeams.some((tt) => tt.team.id === teamId && tt.templateTimeId === templateTimeId)) {
@@ -210,7 +236,7 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0">
-          <Link href="/admin/services/templates">
+          <Link href="/mychurch/services/templates">
             <Button variant="ghost" size="icon" className="mt-0.5 shrink-0"><ChevronLeft className="h-4 w-4" /></Button>
           </Link>
           <div className="min-w-0">
@@ -256,10 +282,10 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
         <div className="space-y-2">
 
           {/* Schedule panel */}
-          <div className="border rounded-lg overflow-hidden bg-white">
+          <div className="border rounded-lg overflow-hidden bg-card">
             <button
               type="button"
-              className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-gray-50 text-left"
+              className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-accent/50 text-left"
               onClick={() => setScheduleOpen(!scheduleOpen)}
             >
               <span className="text-sm font-semibold flex items-center gap-1.5">
@@ -296,7 +322,7 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
                     ) : (
                       <button
                         type="button"
-                        className="w-full flex items-center gap-1 text-left hover:bg-gray-50 rounded px-1 py-0.5"
+                        className="w-full flex items-center gap-1 text-left hover:bg-accent/50 rounded px-1 py-0.5"
                         onClick={() => { setEditTimeStartValue(time.startTime || ""); setEditingTimeStartId(time.id) }}
                       >
                         <span className="text-xs font-medium flex-1 truncate">{time.label}</span>
@@ -325,10 +351,10 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
               )
             )
             return (
-              <div key={key} className="border rounded-lg overflow-hidden bg-white">
+              <div key={key} className="border rounded-lg overflow-hidden bg-card">
                 <button
                   type="button"
-                  className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-gray-50 text-left"
+                  className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-accent/50 text-left"
                   onClick={() => setTeamsOpenByKey((prev) => ({ ...prev, [key]: !isOpen }))}
                 >
                   <span className="text-sm font-semibold">
@@ -471,7 +497,7 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
                     <div className="px-4 pb-3 space-y-2">
                       {/* Add item form */}
                       {addingItemForTimeId === time.id && (
-                        <div className="border rounded p-3 space-y-2 bg-blue-50">
+                        <div className="border rounded p-3 space-y-2 bg-muted/50">
                           <div className="flex gap-2 flex-wrap">
                             {(["SONG", "SERMON", "PRAYER", "ITEM", "HEADER"] as ItemType[]).map((t) => (
                               <button
@@ -481,7 +507,7 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
                                 className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
                                   itemType === t
                                     ? TYPE_COLORS[t] + " border-current"
-                                    : "bg-white text-muted-foreground border-gray-200"
+                                    : "bg-card text-muted-foreground border-border"
                                 }`}
                               >
                                 {TYPE_LABELS[t]}
@@ -503,22 +529,22 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
                       )}
 
                       {/* Item list */}
-                      {time.items.map((item, i) => (
+                      {time.items.map((item) => (
                         <div
                           key={item.id}
                           onMouseEnter={() => setHoveredItemId(item.id)}
                           onMouseLeave={() => setHoveredItemId(null)}
-                          className={`border rounded bg-white ${item.type === "HEADER" ? "flex items-center gap-2 p-2" : "flex items-start gap-2 p-2"}`}
+                          className={`border rounded bg-card ${item.type === "HEADER" ? "flex items-center gap-2 p-2" : "flex items-start gap-2 p-2"}`}
                         >
                           <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                           {item.type === "HEADER" ? (
                             <>
                               <div className="flex-1 flex items-center gap-2 min-w-0">
-                                <div className="flex-1 h-px bg-gray-300" />
-                                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
+                                <div className="flex-1 h-px bg-border" />
+                                <span className="text-xs font-bold text-gray-600 uppercase tracking-wide whitespace-nowrap">
                                   {item.name || "Section"}
                                 </span>
-                                <div className="flex-1 h-px bg-gray-300" />
+                                <div className="flex-1 h-px bg-border" />
                               </div>
                               <button
                                 type="button"
@@ -531,8 +557,7 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
                             </>
                           ) : (
                             <>
-                              <span className="text-sm text-muted-foreground w-5 shrink-0 mt-0.5">{i + 1}.</span>
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1 min-w-0 space-y-1.5">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[item.type]}`}>
                                     {TYPE_LABELS[item.type]}
@@ -540,6 +565,86 @@ export default function TemplateEditor({ template: init, allTeams }: Props) {
                                   <p className="font-medium text-sm truncate">
                                     {item.name || <span className="text-muted-foreground font-normal">{TYPE_LABELS[item.type]} slot</span>}
                                   </p>
+                                </div>
+
+                                {/* Needed roles */}
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {item.neededRoles.map((role) => (
+                                    <span key={role} className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+                                      {role}
+                                      <button
+                                        type="button"
+                                        onClick={() => patchItemRoles(time.id, item.id, item.neededRoles.filter(r => r !== role))}
+                                        className="hover:text-destructive ml-0.5"
+                                      >
+                                        <X className="h-2.5 w-2.5" />
+                                      </button>
+                                    </span>
+                                  ))}
+
+                                  {rolesOpenForItemId === item.id ? (
+                                    <div className="flex items-start gap-1 mt-0.5 w-full">
+                                      <div className="flex-1 space-y-1">
+                                        <Input
+                                          autoFocus
+                                          placeholder="Role name…"
+                                          value={roleInput}
+                                          onChange={(e) => setRoleInput(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter" && roleInput.trim()) {
+                                              const role = roleInput.trim()
+                                              if (!item.neededRoles.includes(role)) {
+                                                patchItemRoles(time.id, item.id, [...item.neededRoles, role])
+                                              }
+                                              setRoleInput("")
+                                            }
+                                            if (e.key === "Escape") { setRolesOpenForItemId(null); setRoleInput("") }
+                                          }}
+                                          className="h-6 text-xs"
+                                        />
+                                        {(() => {
+                                          // Build suggestions from teams assigned to this template
+                                          const teamRoles = template.templateTeams.flatMap(tt => tt.team.roles.map(r => r.name))
+                                          const fallbackRoles = allTeams.flatMap(t => t.roles.map(r => r.name))
+                                          const rolePool = [...new Set(teamRoles.length > 0 ? teamRoles : fallbackRoles)]
+                                          const suggestions = rolePool.filter(r => !item.neededRoles.includes(r) && (!roleInput || r.toLowerCase().includes(roleInput.toLowerCase()))).slice(0, 12)
+                                          return suggestions.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1">
+                                              {suggestions.map(r => (
+                                                <button
+                                                  key={r}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    patchItemRoles(time.id, item.id, [...item.neededRoles, r])
+                                                    setRoleInput("")
+                                                  }}
+                                                  className="text-[10px] px-1.5 py-0.5 rounded-full border hover:bg-accent transition-colors"
+                                                >
+                                                  {r}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          ) : null
+                                        })()}
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => { setRolesOpenForItemId(null); setRoleInput("") }}
+                                        className="text-muted-foreground hover:text-foreground mt-1"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setRolesOpenForItemId(item.id); setRoleInput("") }}
+                                      className="text-[10px] flex items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                      <UserPlus className="h-2.5 w-2.5" />
+                                      {item.neededRoles.length === 0 ? "Add positions" : ""}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                               <button

@@ -3,8 +3,20 @@ export const dynamic = "force-dynamic"
 import { db } from "@/lib/db"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { parseSections } from "@/lib/page-blocks"
+import PublicPageRenderer from "@/components/public/PublicPageRenderer"
 
 export default async function HomePage() {
+  // Try to load the CMS-managed home page first
+  const cmsPage = await db.page.findUnique({ where: { slug: "home" } })
+  if (cmsPage?.published) {
+    const sections = parseSections(cmsPage.content)
+    if (sections.some(s => s.blocks.length > 0)) {
+      return <PublicPageRenderer sections={sections} />
+    }
+  }
+
+  // Fallback: hardcoded home page (shown until the admin builds the home page)
   const [latestSermon, upcomingEvents] = await Promise.all([
     db.sermon.findFirst({ orderBy: { date: "desc" } }),
     db.event.findMany({ where: { startDate: { gte: new Date() } }, orderBy: { startDate: "asc" }, take: 3 }),
@@ -40,11 +52,11 @@ export default async function HomePage() {
           <div className="max-w-3xl mx-auto">
             <p className="text-sm uppercase tracking-wide text-muted-foreground mb-2">Latest Sermon</p>
             <h2 className="text-2xl font-bold mb-1">{latestSermon.title}</h2>
-            <p className="text-muted-foreground mb-4">{latestSermon.speaker} · {new Date(latestSermon.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
+            <p className="text-muted-foreground mb-4">
+              {latestSermon.speaker} · {new Date(latestSermon.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+            </p>
             {latestSermon.description && <p className="mb-4 text-muted-foreground">{latestSermon.description}</p>}
-            <Button asChild variant="outline">
-              <Link href="/sermons">View All Sermons</Link>
-            </Button>
+            <Button asChild variant="outline"><Link href="/sermons">View All Sermons</Link></Button>
           </div>
         </section>
       )}
@@ -67,9 +79,7 @@ export default async function HomePage() {
                 </div>
               ))}
             </div>
-            <Button asChild variant="outline" className="mt-6">
-              <Link href="/events">All Events</Link>
-            </Button>
+            <Button asChild variant="outline" className="mt-6"><Link href="/events">All Events</Link></Button>
           </div>
         </section>
       )}
@@ -78,9 +88,7 @@ export default async function HomePage() {
       <section className="py-16 px-4 bg-gray-900 text-white text-center">
         <h2 className="text-2xl font-bold mb-2">Support Our Ministry</h2>
         <p className="text-gray-300 mb-6">Your generosity makes this community possible.</p>
-        <Button asChild size="lg">
-          <Link href="/give">Give Online</Link>
-        </Button>
+        <Button asChild size="lg"><Link href="/give">Give Online</Link></Button>
       </section>
     </div>
   )

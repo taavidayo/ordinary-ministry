@@ -15,12 +15,12 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await req.json()
-  const { title, author, genre, tags } = body
+  const { title, author } = body
 
   if (!title) return NextResponse.json({ error: "Title required" }, { status: 400 })
 
   const song = await db.song.create({
-    data: { title, author, genre, tags: tags ?? [] },
+    data: { title, author },
   })
   return NextResponse.json(song, { status: 201 })
 }

@@ -105,8 +105,8 @@ export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmi
                 </button>
                 {meta?.id && (
                   <Link
-                    href={`/admin/services/matrix?categoryId=${meta.id}`}
-                    className="h-6 w-6 inline-flex items-center justify-center rounded border bg-white hover:bg-gray-50 text-muted-foreground shrink-0"
+                    href={`/mychurch/services/matrix?categoryId=${meta.id}`}
+                    className="h-6 w-6 inline-flex items-center justify-center rounded border bg-card hover:bg-accent/50 text-muted-foreground shrink-0"
                     title="Matrix view"
                   >
                     <LayoutGrid className="h-3.5 w-3.5" />
@@ -116,9 +116,9 @@ export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmi
 
               {/* Service rows */}
               {!isCollapsed && (
-                <div className="bg-white rounded-lg border overflow-hidden">
+                <div className="bg-card rounded-lg border overflow-hidden">
                   {/* Table header */}
-                  <div className="grid gap-x-4 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide border-b bg-gray-50 items-center"
+                  <div className="grid gap-x-4 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide border-b bg-muted/50 items-center"
                     style={{ gridTemplateColumns: "160px 1fr 160px 160px 20px" }}
                   >
                     <span>Date</span>
@@ -131,8 +131,8 @@ export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmi
                   {services.map((s) => (
                     <div key={s.id} className="flex items-center group/row border-t first:border-t-0">
                       <Link
-                        href={`/admin/services/${s.id}`}
-                        className="grid gap-x-4 px-4 py-2.5 flex-1 hover:bg-gray-50 transition-colors items-center min-w-0"
+                        href={`/mychurch/services/${s.id}`}
+                        className="grid gap-x-4 px-4 py-2.5 flex-1 hover:bg-accent/50 transition-colors items-center min-w-0"
                         style={{ gridTemplateColumns: "160px 1fr 160px 160px 20px" }}
                       >
                         <span className="text-sm font-medium truncate">

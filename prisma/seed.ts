@@ -66,8 +66,7 @@ async function main() {
       id: "amazing-grace",
       title: "Amazing Grace",
       author: "John Newton",
-      genre: "Hymn",
-      tags: ["grace", "salvation"],
+      themes: ["grace", "salvation"],
       arrangements: {
         create: [
           {

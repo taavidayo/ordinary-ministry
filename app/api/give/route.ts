@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
-import { stripe } from "@/lib/stripe"
+import { getStripe } from "@/lib/stripe"
 
 export async function POST(req: Request) {
+  const stripe = await getStripe()
+  if (!stripe) return NextResponse.json({ error: "Stripe is not configured. Add your Stripe keys in Admin Settings." }, { status: 503 })
+
   const body = await req.json()
   const { amount, donorName, donorEmail, note, type, recurring } = body
 
@@ -11,7 +14,6 @@ export async function POST(req: Request) {
   const origin = req.headers.get("origin") || process.env.NEXTAUTH_URL || "http://localhost:3000"
 
   if (recurring) {
-    // Create a subscription checkout
     const priceData = {
       currency: "usd",
       product_data: { name: `Monthly Gift — ${type || "General"}` },

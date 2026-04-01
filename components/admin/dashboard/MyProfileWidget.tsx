@@ -32,7 +32,7 @@ function getAge(birthday: string): number {
 
 export default function MyProfileWidget({ user, timezone }: Props) {
   const initials = user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
-  const roleBadge = ROLE_BADGE[user.role] ?? "bg-gray-100 text-gray-700"
+  const roleBadge = ROLE_BADGE[user.role] ?? "bg-muted text-gray-700"
   const roleLabel = ROLE_LABELS[user.role] ?? user.role
 
   return (
@@ -90,7 +90,7 @@ export default function MyProfileWidget({ user, timezone }: Props) {
           Since {new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: timezone })}
         </p>
         <Link
-          href={`/admin/users/${user.id}`}
+          href={`/mychurch/users/${user.id}`}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           Edit profile <ChevronRight className="h-3 w-3" />

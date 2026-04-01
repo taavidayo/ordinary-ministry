@@ -12,7 +12,7 @@ const CLIENT_CONTEXT = {
 
 // Safe deep-property accessor
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function dig(obj: unknown, ...keys: string[]): any {
+function dig(obj: unknown, ...keys: (string | number)[]): any {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let cur: any = obj
   for (const k of keys) {

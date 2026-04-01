@@ -19,6 +19,11 @@ const DEFAULT_PERMISSIONS = {
   },
 }
 
+function maskKey(key: string | null): string | null {
+  if (!key) return null
+  return key.slice(0, 8) + "****" + key.slice(-4)
+}
+
 export async function GET() {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -28,7 +33,11 @@ export async function GET() {
     create: { id: "default", name: "Ordinary Ministry", permissions: DEFAULT_PERMISSIONS },
     update: {},
   })
-  return NextResponse.json(settings)
+  return NextResponse.json({
+    ...settings,
+    stripeSecretKey: maskKey(settings.stripeSecretKey),
+    stripeWebhookSecret: maskKey(settings.stripeWebhookSecret),
+  })
 }
 
 export async function PATCH(req: Request) {
@@ -51,7 +60,20 @@ export async function PATCH(req: Request) {
       ...(body.logoUrl !== undefined && { logoUrl: body.logoUrl || null }),
       ...(body.timezone !== undefined && { timezone: body.timezone }),
       ...(body.permissions !== undefined && { permissions: body.permissions }),
+      ...(body.homeSlug !== undefined && { homeSlug: body.homeSlug }),
+      ...(body.stripePublishableKey !== undefined && { stripePublishableKey: body.stripePublishableKey || null }),
+      // Only update secret fields if the value isn't a masked placeholder
+      ...(body.stripeSecretKey !== undefined && !String(body.stripeSecretKey).includes("****") && {
+        stripeSecretKey: body.stripeSecretKey || null,
+      }),
+      ...(body.stripeWebhookSecret !== undefined && !String(body.stripeWebhookSecret).includes("****") && {
+        stripeWebhookSecret: body.stripeWebhookSecret || null,
+      }),
     },
   })
-  return NextResponse.json(settings)
+  return NextResponse.json({
+    ...settings,
+    stripeSecretKey: maskKey(settings.stripeSecretKey),
+    stripeWebhookSecret: maskKey(settings.stripeWebhookSecret),
+  })
 }

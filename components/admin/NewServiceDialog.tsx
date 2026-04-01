@@ -17,13 +17,9 @@ export default function NewServiceDialog({ categories, templates, allSeries }: P
   const router = useRouter()
   const [open, setOpen] = useState(false)
 
-  function handleSuccess(ids: string[]) {
+  function handleSuccess(_ids: string[]) {
     setOpen(false)
-    if (ids.length === 1) {
-      router.push(`/admin/services/${ids[0]}`)
-    } else {
-      router.refresh()
-    }
+    router.refresh()
   }
 
   return (

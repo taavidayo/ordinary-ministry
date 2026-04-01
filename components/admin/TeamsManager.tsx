@@ -1,31 +1,58 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
-import { Plus, Trash2, UserPlus, X } from "lucide-react"
+import { Plus, Users, MessageSquare, FolderKanban, LayoutDashboard, Settings, Archive, ArchiveRestore, ChevronDown } from "lucide-react"
 
-interface User { id: string; name: string; email: string }
-interface Role { id: string; name: string; teamId: string; needed: number }
-interface Member { user: User }
-interface Team { id: string; name: string; description: string | null; roles: Role[]; members: Member[] }
+interface User { id: string; name: string; email: string; avatar: string | null }
+interface Member { user: User; isLeader: boolean }
+interface Channel { id: string; name: string }
+interface Team {
+  id: string
+  name: string
+  description: string | null
+  archivedAt: string | null
+  members: Member[]
+  channels: Channel[]
+}
 
 interface Props {
   teams: Team[]
   allUsers: User[]
 }
 
-export default function TeamsManager({ teams: init, allUsers }: Props) {
+function initials(name: string) {
+  return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
+}
+
+
+export default function TeamsManager({ teams: init }: Props) {
+  const router = useRouter()
   const [teams, setTeams] = useState(init)
   const [newTeamName, setNewTeamName] = useState("")
-  const [newRoles, setNewRoles] = useState<Record<string, string>>({})
+  const [showArchived, setShowArchived] = useState(false)
+
+  const activeTeams = teams.filter((t) => !t.archivedAt)
+  const archivedTeams = teams.filter((t) => !!t.archivedAt)
+
+  async function unarchiveTeam(id: string) {
+    const res = await fetch(`/api/teams/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archivedAt: null }),
+    })
+    if (res.ok) {
+      setTeams((prev) => prev.map((t) => t.id === id ? { ...t, archivedAt: null } : t))
+      toast.success("Team restored")
+    }
+  }
 
   async function createTeam() {
-    if (!newTeamName) return
+    if (!newTeamName.trim()) return
     const res = await fetch("/api/teams", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -33,68 +60,10 @@ export default function TeamsManager({ teams: init, allUsers }: Props) {
     })
     if (res.ok) {
       const team = await res.json()
-      setTeams([...teams, { ...team, roles: [], members: [] }])
+      setTeams((prev) => [...prev, { ...team, members: [] }])
       setNewTeamName("")
       toast.success("Team created")
     }
-  }
-
-  async function deleteTeam(id: string) {
-    if (!confirm("Delete team?")) return
-    await fetch(`/api/teams/${id}`, { method: "DELETE" })
-    setTeams(teams.filter((t) => t.id !== id))
-    toast.success("Team deleted")
-  }
-
-  async function addRole(teamId: string) {
-    const name = newRoles[teamId]?.trim()
-    if (!name) return
-    const res = await fetch("/api/roles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId, name }),
-    })
-    if (res.ok) {
-      const role = await res.json()
-      setTeams(teams.map((t) => t.id === teamId ? { ...t, roles: [...t.roles, role] } : t))
-      setNewRoles({ ...newRoles, [teamId]: "" })
-      toast.success("Role added")
-    }
-  }
-
-  async function deleteRole(roleId: string, teamId: string) {
-    if (!confirm("Delete this role? All scheduling slots for this role across all services will also be deleted.")) return
-    const res = await fetch(`/api/roles/${roleId}`, { method: "DELETE" })
-    if (res.ok) {
-      setTeams(teams.map((t) => t.id === teamId ? { ...t, roles: t.roles.filter((r) => r.id !== roleId) } : t))
-      toast.success("Role deleted")
-    } else {
-      toast.error("Failed to delete role")
-    }
-  }
-
-
-  async function addMember(teamId: string, userId: string) {
-    const res = await fetch("/api/team-members", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId, userId }),
-    })
-    if (res.ok) {
-      const user = allUsers.find((u) => u.id === userId)!
-      setTeams(teams.map((t) => t.id === teamId ? { ...t, members: [...t.members, { user }] } : t))
-      toast.success("Member added")
-    } else {
-      toast.error("Already a member")
-    }
-  }
-
-  async function removeMember(teamId: string, userId: string) {
-    await fetch(`/api/team-members/${teamId}/${userId}`, { method: "DELETE" })
-    setTeams(teams.map((t) => t.id === teamId
-      ? { ...t, members: t.members.filter((m) => m.user.id !== userId) }
-      : t
-    ))
   }
 
   return (
@@ -109,87 +78,136 @@ export default function TeamsManager({ teams: init, allUsers }: Props) {
             onKeyDown={(e) => e.key === "Enter" && createTeam()}
             className="w-48"
           />
-          <Button onClick={createTeam}><Plus className="h-4 w-4 mr-1" />Create</Button>
+          <Button onClick={createTeam}>
+            <Plus className="h-4 w-4 mr-1" />
+            Create
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-4">
-        {teams.map((team) => (
-          <Card key={team.id}>
-            <CardHeader className="flex flex-row items-center justify-between py-3">
-              <CardTitle className="text-base">{team.name}</CardTitle>
-              <Button variant="destructive" size="sm" onClick={() => deleteTeam(team.id)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent className="grid md:grid-cols-2 gap-4">
-              {/* Roles */}
-              <div>
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">Roles</Label>
-                <div className="flex flex-wrap gap-1.5 mt-1 mb-2">
-                  {team.roles.map((r) => (
-                    <span key={r.id} className="inline-flex items-center gap-1 bg-secondary text-secondary-foreground rounded-full pl-2.5 pr-1 py-0.5 text-xs font-medium">
-                      {r.name}
-                      <button
-                        type="button"
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={() => deleteRole(r.id, team.id)}
-                        title="Delete role"
-                      >
-                        <X className="h-2.5 w-2.5" />
-                      </button>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {activeTeams.map((team) => {
+          const leaders = team.members.filter((m) => m.isLeader)
+          return (
+            <div key={team.id} onClick={() => router.push(`/mychurch/teams/${team.id}`)} className="rounded-xl border bg-card shadow-sm hover:shadow-md transition-shadow flex flex-col cursor-pointer">
+              {/* Card body */}
+              <div className="p-5 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="font-semibold text-base leading-tight">{team.name}</h2>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                    <Users className="h-3.5 w-3.5" />
+                    {team.members.length}
+                  </div>
+                </div>
+
+                {team.description && (
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{team.description}</p>
+                )}
+
+                {leaders.length > 0 && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <div className="flex -space-x-1.5">
+                      {leaders.slice(0, 3).map((m) => (
+                        <div key={m.user.id}
+                          className="h-6 w-6 rounded-full bg-secondary border-2 border-card flex items-center justify-center text-[10px] font-semibold overflow-hidden shrink-0"
+                          title={m.user.name}
+                        >
+                          {m.user.avatar
+                            ? <img src={m.user.avatar} alt={m.user.name} className="w-full h-full object-cover" />
+                            : initials(m.user.name)
+                          }
+                        </div>
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {leaders.map((m) => m.user.name).join(", ")}
                     </span>
-                  ))}
-                  {team.roles.length === 0 && <span className="text-xs text-muted-foreground">None</span>}
-                </div>
-                <div className="flex gap-1">
-                  <Input
-                    placeholder="Role name…"
-                    className="h-7 text-sm"
-                    value={newRoles[team.id] ?? ""}
-                    onChange={(e) => setNewRoles({ ...newRoles, [team.id]: e.target.value })}
-                    onKeyDown={(e) => e.key === "Enter" && addRole(team.id)}
-                  />
-                  <Button size="sm" className="h-7" onClick={() => addRole(team.id)}>Add</Button>
-                </div>
+                  </div>
+                )}
+
+                {leaders.length === 0 && (
+                  <p className="mt-3 text-xs text-muted-foreground italic">No leader assigned</p>
+                )}
               </div>
 
-              {/* Members */}
-              <div>
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">Members</Label>
-                <div className="space-y-1 mt-1 mb-2">
-                  {team.members.map((m) => (
-                    <div key={m.user.id} className="flex items-center justify-between">
-                      <span className="text-sm">{m.user.name}</span>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeMember(team.id, m.user.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                  {team.members.length === 0 && <span className="text-xs text-muted-foreground">No members</span>}
-                </div>
-                <Select onValueChange={(uid) => addMember(team.id, uid)}>
-                  <SelectTrigger className="h-7 text-sm">
-                    <SelectValue placeholder="Add member…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allUsers
-                      .filter((u) => !team.members.some((m) => m.user.id === u.id))
-                      .map((u) => (
-                        <SelectItem key={u.id} value={u.id}>
-                          <UserPlus className="h-3 w-3 inline mr-1" />{u.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+              {/* Quick-action buttons */}
+              <div className="border-t px-3 py-2 flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                {/* Dashboard */}
+                <Link
+                  href={`/mychurch/teams/${team.id}`}
+                  className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                  title="Dashboard"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span className="text-[9px] font-medium">Dashboard</span>
+                </Link>
+                {/* Chat — only if a channel is linked */}
+                {team.channels[0] && (
+                  <Link
+                    href={`/mychurch/chat/${team.channels[0].id}`}
+                    className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                    title={`#${team.channels[0].name}`}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    <span className="text-[9px] font-medium">Chat</span>
+                  </Link>
+                )}
+                {/* Projects */}
+                <Link
+                  href={`/mychurch/teams/${team.id}?tab=tasks`}
+                  className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                  title="Projects"
+                >
+                  <FolderKanban className="h-4 w-4" />
+                  <span className="text-[9px] font-medium">Projects</span>
+                </Link>
+                {/* Settings */}
+                <Link
+                  href={`/mychurch/teams/${team.id}/settings`}
+                  className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                  title="Settings"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="text-[9px] font-medium">Settings</span>
+                </Link>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-        {teams.length === 0 && (
-          <p className="text-center text-muted-foreground py-10">No teams yet. Create one above.</p>
+            </div>
+          )
+        })}
+
+        {activeTeams.length === 0 && (
+          <p className="col-span-full text-center text-muted-foreground py-10">
+            No teams yet. Create one above.
+          </p>
         )}
       </div>
+
+      {/* Archived teams */}
+      {archivedTeams.length > 0 && (
+        <div className="space-y-3">
+          <button
+            onClick={() => setShowArchived((v) => !v)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${showArchived ? "" : "-rotate-90"}`} />
+            <Archive className="h-4 w-4" />
+            Archived Teams ({archivedTeams.length})
+          </button>
+          {showArchived && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 opacity-60">
+              {archivedTeams.map((team) => (
+                <div key={team.id} className="rounded-xl border bg-card flex items-center justify-between p-4 gap-4">
+                  <p className="font-medium text-sm truncate">{team.name}</p>
+                  <Button size="sm" variant="outline" onClick={() => unarchiveTeam(team.id)}>
+                    <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" />
+                    Restore
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

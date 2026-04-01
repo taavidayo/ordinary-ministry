@@ -45,6 +45,7 @@ export async function POST(req: Request) {
           title: eventTitle,
           description: notes || null,
           startDate: new Date(date),
+          category: category.name,
         },
       })
       await db.service.update({

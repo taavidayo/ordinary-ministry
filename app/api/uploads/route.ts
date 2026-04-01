@@ -1,25 +1,56 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { writeFile, mkdir } from "fs/promises"
-import path from "path"
+import { writeFile, mkdir, readdir } from "fs/promises"
+import { join } from "path"
+import { randomUUID } from "crypto"
+
+export async function GET() {
+  const uploadsDir = join(process.cwd(), "public", "uploads")
+  try {
+    const files = await readdir(uploadsDir)
+    return NextResponse.json({
+      files: files
+        .filter(f => !f.startsWith("."))
+        .map(f => ({ name: f, url: `/uploads/${f}` }))
+        .reverse(), // newest first
+    })
+  } catch {
+    return NextResponse.json({ files: [] })
+  }
+}
 
 export async function POST(req: Request) {
   const session = await auth()
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const formData = await req.formData()
-  const file = formData.get("file") as File | null
-  if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 })
+  try {
+    const formData = await req.formData()
+    const file = formData.get("file")
+    if (!file || typeof file === "string") {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 })
+    }
 
-  const bytes = await file.arrayBuffer()
-  const buffer = Buffer.from(bytes)
+    // file is a File/Blob
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
 
-  const uploadsDir = path.join(process.cwd(), "public", "uploads")
-  await mkdir(uploadsDir, { recursive: true })
+    // Sanitize original filename
+    const originalName = (file as File).name ?? "upload"
+    const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80)
+    const uniqueName = `${randomUUID()}-${safeName}`
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
-  const filename = `${Date.now()}-${safeName}`
-  await writeFile(path.join(uploadsDir, filename), buffer)
+    // Ensure uploads directory exists
+    const uploadDir = join(process.cwd(), "public", "uploads")
+    await mkdir(uploadDir, { recursive: true })
 
-  return NextResponse.json({ url: `/uploads/${filename}` })
+    const filePath = join(uploadDir, uniqueName)
+    await writeFile(filePath, buffer)
+
+    return NextResponse.json({
+      url: `/uploads/${uniqueName}`,
+      name: safeName,
+    })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
 }

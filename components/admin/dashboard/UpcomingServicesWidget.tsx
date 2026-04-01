@@ -36,7 +36,7 @@ export default function UpcomingServicesWidget({ slots, timezone }: Props) {
             {slots.map((s) => (
               <li key={s.id}>
                 <Link
-                  href={`/admin/services/${s.serviceTeam.service.id}`}
+                  href={`/mychurch/services/${s.serviceTeam.service.id}`}
                   className="flex items-center justify-between gap-3 group"
                 >
                   <div className="min-w-0">
