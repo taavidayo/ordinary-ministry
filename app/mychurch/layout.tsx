@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import AdminNav from "@/components/admin/AdminNav"
+import NotificationBell from "@/components/admin/NotificationBell"
 
 const DEFAULT_FEATURES = {
   services: "VISITOR", teams: "MEMBER", groups: "MEMBER", users: "LEADER",
@@ -52,7 +53,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       />
       <div className="flex-1 flex flex-col overflow-hidden min-h-screen">
         {/* Desktop header */}
-        <div className="hidden md:flex items-center justify-end h-11 px-4 border-b bg-card shrink-0">
+        <div className="hidden md:flex items-center justify-end gap-2 h-11 px-4 border-b bg-card shrink-0">
+          <NotificationBell />
+          <div className="w-px h-5 bg-border" />
           <Link
             href={`/mychurch/users/${session.user.id}`}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"

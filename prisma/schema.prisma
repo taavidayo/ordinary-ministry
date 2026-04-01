@@ -839,6 +839,7 @@ model ChannelMember {
   categoryId String?
   order      Int           @default(0)
   joinedAt   DateTime      @default(now())
+  lastRead   DateTime?
 
   @@unique([channelId, userId])
 }

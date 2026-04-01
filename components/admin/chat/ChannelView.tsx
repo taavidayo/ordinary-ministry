@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Pin, Users, X, Hash, Lock, Settings, Search, Kanban, LayoutDashboard } from "lucide-react"
+import { Pin, Users, X, Hash, Lock, Settings, Search, Kanban, LayoutDashboard, ArrowLeft } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ interface Props {
   channel: ChannelDetail
   currentUser: { id: string; role: string }
   initialMessages: MessageWithMeta[]
+  onBack?: () => void
   onMetaUpdated?: (patch: { name?: string; description?: string | null; icon?: string | null }) => void
   onArchived?: () => void
   onUnarchived?: () => void
@@ -48,7 +49,7 @@ function HeaderBtn({
   )
 }
 
-export default function ChannelView({ channel: initialChannel, currentUser, initialMessages, onMetaUpdated, onArchived, onUnarchived, onDeleted }: Props) {
+export default function ChannelView({ channel: initialChannel, currentUser, initialMessages, onBack, onMetaUpdated, onArchived, onUnarchived, onDeleted }: Props) {
   const [channel, setChannel] = useState(initialChannel)
   const [messages, setMessages] = useState<MessageWithMeta[]>(initialMessages)
   const [panel, setPanel] = useState<Panel>(null)
@@ -62,6 +63,11 @@ export default function ChannelView({ channel: initialChannel, currentUser, init
   useEffect(() => {
     fetch("/api/custom-emojis").then((r) => r.json()).then(setCustomEmojis).catch(() => {})
   }, [])
+
+  // Mark channel as read when opened
+  useEffect(() => {
+    fetch(`/api/channels/${channel.id}/read`, { method: "POST" }).catch(() => {})
+  }, [channel.id])
 
   useEffect(() => {
     setBannerDismissed(false)
@@ -184,6 +190,17 @@ export default function ChannelView({ channel: initialChannel, currentUser, init
         {/* Header */}
         <div className="border-b px-4 py-2 flex items-center justify-between shrink-0 bg-card">
           <div className="flex items-center gap-2 min-w-0">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 md:hidden shrink-0 -ml-1 mr-0.5"
+                onClick={onBack}
+                aria-label="Back"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            )}
             <ChannelIcon channel={channel} />
             <div className="min-w-0">
               <p className="font-semibold text-sm leading-tight">{channel.name}</p>
