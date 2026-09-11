@@ -46,7 +46,10 @@ export default function NewServiceForm({ categories, templates, allSeries, onSuc
     for (let i = 0; i < quantity; i++) {
       const d = new Date(base)
       d.setDate(d.getDate() + i * 7)
-      dates.push(d.toISOString().split("T")[0])
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, "0")
+      const day = String(d.getDate()).padStart(2, "0")
+      dates.push(`${year}-${month}-${day}`)
     }
     return dates
   }
