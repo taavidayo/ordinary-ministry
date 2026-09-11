@@ -236,7 +236,7 @@ export default function SermonsManager({ sermons: init, playlists: initPlaylists
                     <TableCell className="font-medium">{s.title}</TableCell>
                     <TableCell>{s.speaker}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(s.date).toLocaleDateString()}
+                      {new Date(s.date).toLocaleDateString("en-US", { timeZone: "UTC" })}
                     </TableCell>
                     <TableCell>
                       {s.playlist ? (

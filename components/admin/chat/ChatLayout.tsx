@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Hash, MessageCircle, AtSign } from "lucide-react"
+import { Hash, MessageCircle, AtSign, PanelLeftOpen } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 import ChatSidebar from "./ChatSidebar"
@@ -65,6 +65,7 @@ export default function ChatLayout({
   const [categories, setCategories] = useState<ChatCategoryItem[]>(initialCategories)
   const [mobileTab, setMobileTab] = useState<MobileTab>("channels")
   const [slideDir, setSlideDir] = useState<"forward" | "back">("forward")
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const showingChannel = !!activeChannel
 
@@ -177,8 +178,17 @@ export default function ChatLayout({
 
       {/* ── Desktop: sidebar + main ──────────────────────────────────────── */}
       <div className="hidden md:flex w-full h-full overflow-hidden">
-        <ChatSidebar {...sidebarProps} />
-        <div className="flex-1 flex overflow-hidden">
+        {sidebarOpen && <ChatSidebar {...sidebarProps} onCollapse={() => setSidebarOpen(false)} />}
+        <div className="flex-1 flex overflow-hidden relative">
+          {!sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              title="Open sidebar"
+              className="absolute top-3 left-3 z-10 h-7 w-7 inline-flex items-center justify-center rounded border bg-card hover:bg-accent text-muted-foreground"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          )}
           {activeChannel ? (
             <ChannelView
               channel={activeChannel}

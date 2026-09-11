@@ -40,7 +40,7 @@ function formatRelativeTime(iso: string): string {
   if (hours < 24) return `${hours}h ago`
   const days = Math.floor(hours / 24)
   if (days < 7) return `${days}d ago`
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 }
 
 export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmin }: Props) {
@@ -60,7 +60,7 @@ export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmi
     const res = await fetch(`/api/services/${deleteTarget.id}`, { method: "DELETE" })
     setDeleting(false)
     if (!res.ok) { toast.error("Failed to delete service"); return }
-    const label = deleteTarget.title || new Date(deleteTarget.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    const label = deleteTarget.title || new Date(deleteTarget.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
     toast.success(`"${label}" deleted`)
     setDeleteTarget(null)
     setGroups((prev) =>
@@ -105,9 +105,9 @@ export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmi
                 </button>
                 {meta?.id && (
                   <Link
-                    href={`/mychurch/services/matrix?categoryId=${meta.id}`}
+                    href={`/mychurch/services/grid?categoryId=${meta.id}`}
                     className="h-6 w-6 inline-flex items-center justify-center rounded border bg-card hover:bg-accent/50 text-muted-foreground shrink-0"
-                    title="Matrix view"
+                    title="Grid view"
                   >
                     <LayoutGrid className="h-3.5 w-3.5" />
                   </Link>
@@ -140,6 +140,7 @@ export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmi
                             month: "short",
                             day: "numeric",
                             year: "numeric",
+                            timeZone: "UTC",
                           })}
                         </span>
                         <span className="text-sm truncate text-foreground">
@@ -181,7 +182,7 @@ export default function CollapsibleServiceGroups({ groups: initialGroups, isAdmi
           <p className="text-sm text-muted-foreground">
             Are you sure you want to delete{" "}
             <span className="font-medium text-foreground">
-              "{deleteTarget?.title || new Date(deleteTarget?.date ?? "").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}"
+              "{deleteTarget?.title || new Date(deleteTarget?.date ?? "").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}"
             </span>?
             This will remove all service times, program items, and team assignments and cannot be undone.
           </p>

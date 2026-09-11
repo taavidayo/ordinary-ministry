@@ -108,6 +108,7 @@ function NavLink({
     <Link
       href={href}
       title={collapsed ? label : undefined}
+      onClick={e => e.stopPropagation()}
       className={cn(
         "flex items-center gap-2.5 py-2 rounded-md text-sm transition-colors",
         collapsed ? "justify-center px-2" : "px-3",
@@ -129,6 +130,8 @@ export default function AdminNav({ user, settings }: Props) {
   const isAdmin = userRole === "ADMIN"
 
   const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   const [collapsed, setCollapsed] = useState(false)
   useEffect(() => {
@@ -152,8 +155,8 @@ export default function AdminNav({ user, settings }: Props) {
   const parentNav = getParentNav(pathname)
   const sectionLabel = getSectionLabel(pathname)
 
-  const themeLabel = theme === "dark" ? "Dark mode" : theme === "system" ? "System" : "Light mode"
-  const ThemeIcon = theme === "dark" ? Moon : theme === "system" ? Monitor : Sun
+  const themeLabel = !mounted ? "System" : theme === "dark" ? "Dark mode" : theme === "system" ? "System" : "Light mode"
+  const ThemeIcon = !mounted ? Monitor : theme === "dark" ? Moon : theme === "system" ? Monitor : Sun
 
   return (
     <>
@@ -242,13 +245,16 @@ export default function AdminNav({ user, settings }: Props) {
       </div>
 
       {/* ── Desktop sidebar ── */}
-      <aside className={cn(
-        "hidden md:flex flex-col shrink-0 bg-card border-r min-h-screen transition-all duration-200",
-        collapsed ? "w-14" : "w-48"
-      )}>
+      <aside
+        onClick={toggleCollapse}
+        className={cn(
+          "hidden md:flex flex-col shrink-0 bg-card border-r min-h-screen transition-all duration-200 cursor-pointer",
+          collapsed ? "w-14" : "w-48"
+        )}
+      >
         {/* Logo / name — click to collapse/expand */}
         <button
-          onClick={toggleCollapse}
+          onClick={e => { e.stopPropagation(); toggleCollapse() }}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn("border-b p-2 shrink-0 w-full text-left hover:bg-accent/30 transition-colors", collapsed && "flex justify-center")}
         >
@@ -308,7 +314,7 @@ export default function AdminNav({ user, settings }: Props) {
           )}
 
           <button
-            onClick={() => setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light")}
+            onClick={e => { e.stopPropagation(); setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light") }}
             title={collapsed ? themeLabel : undefined}
             className={cn(
               "flex items-center gap-2.5 py-2 w-full rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors",
@@ -320,7 +326,7 @@ export default function AdminNav({ user, settings }: Props) {
           </button>
 
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={e => { e.stopPropagation(); signOut({ callbackUrl: "/login" }) }}
             title={collapsed ? "Sign out" : undefined}
             className={cn(
               "flex items-center gap-2.5 py-2 w-full rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors",

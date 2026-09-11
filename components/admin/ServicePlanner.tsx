@@ -961,7 +961,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              {new Date(init.date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+              {new Date(init.date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}
             </p>
             {/* Series icon button */}
             {(() => {
@@ -1665,8 +1665,8 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                       {linkServices.map((s) => (
                                         <SelectItem key={s.id} value={s.id}>
                                           {s.id === init.id
-                                            ? `This Service — ${new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-                                            : `${s.title} — ${new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                                            ? `This Service — ${new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`
+                                            : `${s.title} — ${new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
@@ -1996,8 +1996,8 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                                             {linkServices.map((s) => (
                                               <SelectItem key={s.id} value={s.id}>
                                                 {s.id === init.id
-                                                  ? `This Service — ${new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-                                                  : `${s.title} — ${new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                                                  ? `This Service — ${new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`
+                                                  : `${s.title} — ${new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`}
                                               </SelectItem>
                                             ))}
                                           </SelectContent>
@@ -2402,7 +2402,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
                   {others.map((s) => (
                     <div key={s.id} className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">
-                        {new Date(s.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                        {new Date(s.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                       </span>
                       {s.title && <span className="text-xs font-medium">· {s.title}</span>}
                     </div>
@@ -2420,7 +2420,7 @@ export default function ServicePlanner({ service: init, allSongs, allTeams, allS
           <DialogHeader>
             <DialogTitle>Assign {rolePickerDialog?.role.name}</DialogTitle>
             <p className="text-xs text-muted-foreground pt-0.5">
-              {new Date(init.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              {new Date(init.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" })}
             </p>
           </DialogHeader>
 

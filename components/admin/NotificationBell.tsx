@@ -281,7 +281,7 @@ export default function NotificationBell() {
                             <p className="text-sm font-medium leading-tight truncate">
                               {s.serviceTeam.service.title ||
                                 new Date(s.serviceTeam.service.date).toLocaleDateString("en-US", {
-                                  month: "short", day: "numeric",
+                                  month: "short", day: "numeric", timeZone: "UTC",
                                 })}
                             </p>
                             <p className="text-xs text-muted-foreground">

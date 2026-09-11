@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const service = await db.service.create({
     data: {
       title: title ?? "",
-      date: new Date(date),
+      date: new Date(date + "T12:00:00Z"),
       notes,
       categoryId: categoryId || null,
       seriesId: seriesId || null,
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
         data: {
           title: eventTitle,
           description: notes || null,
-          startDate: new Date(date),
+          startDate: new Date(date + "T12:00:00Z"),
           category: category.name,
         },
       })

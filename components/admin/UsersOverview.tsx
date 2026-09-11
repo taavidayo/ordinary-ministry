@@ -200,7 +200,7 @@ export default function UsersOverview({ users, memberCategories, ministries, las
                 <p className="text-sm font-medium truncate">{lastServiceStats.title || "Service"}</p>
                 <p className="text-xs text-muted-foreground">
                   {new Date(lastServiceStats.date).toLocaleDateString("en-US", {
-                    weekday: "long", month: "short", day: "numeric",
+                    weekday: "long", month: "short", day: "numeric", timeZone: "UTC",
                   })}
                 </p>
               </div>

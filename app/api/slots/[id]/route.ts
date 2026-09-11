@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
+import { getMobileSession } from "@/lib/mobile-token"
 import { revalidatePath } from "next/cache"
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const mobileSession = session ? null : await getMobileSession(req)
+  if (!session && !mobileSession) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const { id } = await params
   const body = await req.json()

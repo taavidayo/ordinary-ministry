@@ -392,7 +392,7 @@ export default function EventDetail({
                   {init.sourceService.title || init.sourceService.category?.name || "Service"}
                 </span>
                 <span className="text-muted-foreground ml-2">
-                  {new Date(init.sourceService.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                  {new Date(init.sourceService.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                 </span>
               </div>
               <ExternalLink className="h-3.5 w-3.5 ml-auto shrink-0 text-muted-foreground" />

@@ -116,6 +116,42 @@ function loadToolbarExpanded(): boolean {
 function saveToolbarExpanded(v: boolean) {
   try { localStorage.setItem("songbook:toolbar-expanded", String(v)) } catch {}
 }
+function loadScrollPosition(arrangementId: string): { top: number; left: number } {
+  try {
+    const raw = localStorage.getItem(`songbook:scroll:${arrangementId}`)
+    if (!raw) return { top: 0, left: 0 }
+    const parsed = JSON.parse(raw)
+    return { top: parsed.top ?? 0, left: parsed.left ?? 0 }
+  } catch { return { top: 0, left: 0 } }
+}
+function saveScrollPosition(arrangementId: string, top: number, left: number) {
+  try { localStorage.setItem(`songbook:scroll:${arrangementId}`, JSON.stringify({ top, left })) } catch {}
+}
+function loadPageIndex(arrangementId: string): number {
+  try {
+    const v = localStorage.getItem(`songbook:page:${arrangementId}`)
+    if (v === null) return 0
+    const n = parseInt(v, 10)
+    return isNaN(n) ? 0 : n
+  } catch { return 0 }
+}
+function savePageIndex(arrangementId: string, page: number) {
+  try { localStorage.setItem(`songbook:page:${arrangementId}`, String(page)) } catch {}
+}
+function loadZoomForSong(arrangementId: string): number {
+  try {
+    const v = localStorage.getItem(`songbook:zoom:${arrangementId}`)
+    if (v !== null) {
+      const n = parseFloat(v)
+      if (!isNaN(n)) return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, n))
+    }
+    return loadZoom() // fall back to global default
+  } catch { return 1 }
+}
+function saveZoomForSong(arrangementId: string, z: number) {
+  try { localStorage.setItem(`songbook:zoom:${arrangementId}`, String(z)) } catch {}
+  saveZoom(z) // keep global in sync as default for new songs
+}
 
 // ── Canvas helpers ─────────────────────────────────────────────────────────────
 
@@ -374,6 +410,11 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
   const notesCacheRef      = useRef<Map<string, TextBox[]>>(new Map())
   const canvasRestoringRef = useRef(false)  // true while firstResize img is loading
 
+  // Scroll / page persistence
+  const scrollableRef        = useRef<HTMLDivElement>(null)
+  const pageIndexRef         = useRef(0)
+  const prevIdxForEffect9Ref = useRef(-1) // -1 so first run triggers page restore
+
   // Latest-value refs (read inside effects/callbacks without stale closures)
   const textBoxesRef = useRef<TextBox[]>([])
   const currentIdRef = useRef<string | undefined>(songs[0]?.arrangementId)
@@ -386,12 +427,13 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
   useEffect(() => { eraserModeRef.current = eraserMode },        [eraserMode])
   useEffect(() => { brushSizeRef.current  = brushSize },         [brushSize])
   useEffect(() => { brushColorRef.current = brushColor },        [brushColor])
+  useEffect(() => { pageIndexRef.current  = pageIndex },         [pageIndex])
 
   // ── 0. Load persisted UI state on mount ───────────────────────────────────
 
   useEffect(() => {
-    setZoom(loadZoom())
     setToolbarExpanded(loadToolbarExpanded())
+    // Zoom is loaded per-song in Effect 10, which runs on mount (index=0) and song switches.
   }, []) // mount only
 
   // ── 1. Load persisted canvas/notes data on mount ──────────────────────────
@@ -483,7 +525,9 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
       const lc = logical.current
       if (lc && lc.width > 0) saveCanvas(id, lc.toDataURL())
       saveNotes(id, textBoxesRef.current)
-      saveZoom(zoomRef.current)
+      saveZoomForSong(id, zoomRef.current)
+      saveScrollPosition(id, scrollTopMv.get(), scrollLeftMv.get())
+      savePageIndex(id, pageIndexRef.current)
     }
   }, []) // mount only, cleanup on unmount
 
@@ -492,12 +536,14 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
   const zoomInitializedRef = useRef(false)
 
   useEffect(() => {
-    // Skip saving on very first run (zoom=1 initial state) — Effect #0 will trigger the
-    // correct saved zoom, which fires a second run that saves the right value.
+    // Skip the very first run (zoom=1 initial state). Effect 10 runs after this and
+    // writes the correct per-song value directly, so the key is never left stale.
     if (!zoomInitializedRef.current) {
       zoomInitializedRef.current = true
     } else {
-      saveZoom(zoom)
+      const id = currentIdRef.current
+      if (id) saveZoomForSong(id, zoom)
+      else saveZoom(zoom)
     }
     // Don't overwrite canvas with blank while the initial canvas is still loading from storage
     if (canvasRestoringRef.current) return
@@ -525,13 +571,14 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
         canvasCacheRef.current.set(prevId, dataUrl)
         saveCanvas(prevId, dataUrl)
       }
-      // Persist previous song's notes
+      // Persist previous song's notes, scroll, page, zoom
       notesCacheRef.current.set(prevId, textBoxesRef.current)
       saveNotes(prevId, textBoxesRef.current)
+      saveScrollPosition(prevId, scrollTopMv.get(), scrollLeftMv.get())
+      savePageIndex(prevId, pageIndexRef.current)
+      saveZoomForSong(prevId, zoomRef.current)
 
-      // Reset scroll for the incoming song
-      scrollTopMv.set(0)
-      scrollLeftMv.set(0)
+      // (Zoom for next song is restored in Effect 10 which also runs on index change)
 
       // Restore next song's logical canvas
       const lCtx = logical.getContext("2d")!
@@ -544,11 +591,11 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
         const img = new Image()
         img.onload = () => {
           lCtx.drawImage(img, 0, 0)
-          renderFromLogical(display, logical, zoomRef.current, 0, 0)
+          renderFromLogical(display, logical, zoomRef.current, scrollLeftMv.get(), scrollTopMv.get())
         }
         img.src = nextCanvas
       } else {
-        renderFromLogical(display, logical, zoomRef.current, 0, 0)
+        renderFromLogical(display, logical, zoomRef.current, scrollLeftMv.get(), scrollTopMv.get())
       }
 
       // Restore next song's notes
@@ -588,6 +635,9 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
       const lc = logicalCanvasRef.current
       if (lc && lc.width > 0) saveCanvas(id, lc.toDataURL())
       saveNotes(id, textBoxesRef.current)
+      saveScrollPosition(id, scrollTopMv.get(), scrollLeftMv.get())
+      savePageIndex(id, pageIndexRef.current)
+      saveZoomForSong(id, zoomRef.current)
     }
     document.addEventListener("visibilitychange", save)
     return () => document.removeEventListener("visibilitychange", save)
@@ -608,17 +658,53 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
   }, [])
 
   // ── 9. Recompute total pages on song / transpose change ───────────────────
+  // When the song changes, restore the saved page index.
+  // When only transpose changes, clamp the current page to the new total.
 
   useEffect(() => {
     const count = getPageCount(songs[index].arrangement.chordproText, transpose)
     setTotalPages(count)
-    setPageIndex(0)
-    scrollTopMv.set(0)
-    scrollLeftMv.set(0)
+    if (prevIdxForEffect9Ref.current !== index) {
+      const id = songs[index]?.arrangementId
+      const saved = id ? Math.min(loadPageIndex(id), count - 1) : 0
+      setPageIndex(saved)
+      pageIndexRef.current = saved
+      prevIdxForEffect9Ref.current = index
+    } else {
+      setPageIndex(p => Math.min(p, count - 1))
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, transpose])
 
-  // ── 10. Keyboard navigation + undo/redo shortcuts ─────────────────────────
+  // ── 10. Restore zoom, scroll position per song ───────────────────────────────
+  // Runs on mount (index=0) AND on every song switch.
+  // Zoom is loaded and immediately re-saved so the per-song key always exists.
+  // setZoom updates the React state so the renderer uses the correct value.
+
+  useEffect(() => {
+    const id = songs[index]?.arrangementId
+    if (!id) return
+
+    // Load and immediately persist so the key is always written even if the
+    // zoom value matches the current state (React would skip re-render in that case).
+    const saved = loadZoomForSong(id)
+    saveZoomForSong(id, saved)
+    setZoom(saved)
+
+    // Restore scroll
+    const { top, left } = loadScrollPosition(id)
+    scrollTopMv.set(top)
+    scrollLeftMv.set(left)
+    requestAnimationFrame(() => {
+      const el = scrollableRef.current
+      if (!el) return
+      el.scrollTop = top
+      el.scrollLeft = left
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, songs]) // scrollTopMv/scrollLeftMv/scrollableRef/zoomRef are stable refs
+
+  // ── 11. Keyboard navigation + undo/redo shortcuts ─────────────────────────
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -633,7 +719,7 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, pageIndex, songs.length, totalPages])
 
-  // ── 11. Ctrl+wheel zoom (trackpad pinch) ──────────────────────────────────
+  // ── 12. Ctrl+wheel zoom (trackpad pinch) ──────────────────────────────────
 
   useEffect(() => {
     const el = contentRef.current
@@ -647,7 +733,7 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
     return () => el.removeEventListener("wheel", handler)
   }, [])
 
-  // ── 12. Two-finger pinch-to-zoom on touchscreen ───────────────────────────
+  // ── 13. Two-finger pinch-to-zoom on touchscreen ───────────────────────────
 
   useEffect(() => {
     const el = contentRef.current
@@ -948,7 +1034,11 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
 
             <span className="text-xs text-muted-foreground">Zoom</span>
             <button
-              onClick={() => { saveZoom(zoom); setZoomSaved(true); setTimeout(() => setZoomSaved(false), 1500) }}
+              onClick={() => {
+                const id = currentIdRef.current
+                if (id) saveZoomForSong(id, zoom); else saveZoom(zoom)
+                setZoomSaved(true); setTimeout(() => setZoomSaved(false), 1500)
+              }}
               title="Save zoom as default"
               className={iconBtn(zoomSaved)}
             >
@@ -1090,6 +1180,7 @@ export default function SwipeableSongbook({ songs, serviceId, serviceTitle, serv
             animate="center"
             exit="exit"
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            ref={scrollableRef}
             className="absolute inset-0 overflow-auto py-4 px-12"
             onScroll={e => {
               const el = e.currentTarget

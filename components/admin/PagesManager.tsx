@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useState, useRef, useCallback, useEffect, Fragment } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -592,8 +592,8 @@ export default function PagesManager({ initialPages, homeExists, initialNavConfi
               // ── Dropdown (folder) row ──────────────────────────────────────
               if (item.type === "folder") {
                 return (
-                  <>
-                    <tr key={item.id} draggable
+                  <Fragment key={item.id}>
+                    <tr draggable
                       onDragStart={() => startDrag(item.id, "nav")}
                       onDragOver={e => onRowDragOver(e, item.id)}
                       onDrop={e => onRowDrop(e, item.id)}
@@ -680,7 +680,7 @@ export default function PagesManager({ initialPages, homeExists, initialNavConfi
                         </tr>
                       )
                     })}
-                  </>
+                  </Fragment>
                 )
               }
 
@@ -745,8 +745,8 @@ export default function PagesManager({ initialPages, homeExists, initialNavConfi
               const children = item.children ?? []
 
               return (
-                <>
-                  <tr key={item.id} draggable
+                <Fragment key={item.id}>
+                  <tr draggable
                     onDragStart={() => startDrag(item.id, "nav")}
                     onDragOver={e => onRowDragOver(e, item.id)}
                     onDrop={e => onRowDrop(e, item.id)}
@@ -825,7 +825,7 @@ export default function PagesManager({ initialPages, homeExists, initialNavConfi
                       </tr>
                     )
                   })}
-                </>
+                </Fragment>
               )
             })}
 

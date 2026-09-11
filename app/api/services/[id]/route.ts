@@ -7,6 +7,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const service = await db.service.findUnique({
     where: { id },
     include: {
+      series: { select: { id: true, name: true, imageUrl: true } },
       times: {
         orderBy: { order: "asc" },
         include: {

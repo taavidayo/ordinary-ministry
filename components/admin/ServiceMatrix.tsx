@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
-  ExternalLink, Plus, X, Upload, Layers, LayoutTemplate, AlertTriangle,
+  ExternalLink, Plus, X, Upload, Layers, LayoutTemplate, AlertTriangle, Search, ChevronLeft,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -87,7 +87,7 @@ type DragPayload =
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function ServiceMatrix({ services: initServices, allTeams, allSeries: initSeries, allTemplates }: Props) {
+export default function ServiceGrid({ category, services: initServices, allTeams, allSeries: initSeries, allTemplates }: Props) {
   const [services, setServices] = useState<MatrixService[]>(initServices)
   const [seriesList, setSeriesList] = useState<Series[]>(initSeries)
 
@@ -127,6 +127,13 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
   const [pendingConflict, setPendingConflict] = useState<{
     user: User; conflicts: { roleName: string; teamName: string }[]
   } | null>(null)
+
+  // Add/remove services from grid
+  const [addServiceOpen, setAddServiceOpen] = useState(false)
+  const [addServiceSearch, setAddServiceSearch] = useState("")
+  const [addServiceList, setAddServiceList] = useState<{ id: string; title: string; date: string; categoryName: string | null }[]>([])
+  const [addServiceLoading, setAddServiceLoading] = useState(false)
+  const [addingServiceId, setAddingServiceId] = useState<string | null>(null)
 
   // Fetch availability for all service dates on mount
   useEffect(() => {
@@ -480,7 +487,7 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
 
   async function addTeam(serviceId: string, teamId: string) {
     const svc = services.find((s) => s.id === serviceId)
-    if (svc?.teams.some((t) => t.team.id === teamId && t.serviceTimeId === null)) {
+    if (svc?.teams.some((t) => t.team.id === teamId)) {
       toast.error("Team already added"); return
     }
     const res = await fetch(`/api/services/${serviceId}/teams`, {
@@ -500,13 +507,153 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
     }
   }
 
+  function removeService(serviceId: string) {
+    setServices((prev) => prev.filter((s) => s.id !== serviceId))
+  }
+
+  async function openAddService() {
+    setAddServiceOpen(true)
+    if (addServiceList.length > 0) return
+    setAddServiceLoading(true)
+    try {
+      const res = await fetch("/api/services/summary")
+      const list: { id: string; title: string; date: string; categoryName: string | null }[] = await res.json()
+      setAddServiceList(list.filter((s) => !services.some((svc) => svc.id === s.id)))
+    } finally {
+      setAddServiceLoading(false)
+    }
+  }
+
+  async function handleAddService(serviceId: string) {
+    setAddingServiceId(serviceId)
+    try {
+      const res = await fetch(`/api/services/${serviceId}`)
+      if (!res.ok) { toast.error("Failed to load service"); return }
+      const raw = await res.json()
+      const svc: MatrixService = {
+        id: raw.id,
+        title: raw.title ?? "",
+        date: typeof raw.date === "string" ? raw.date : new Date(raw.date).toISOString(),
+        notes: raw.notes ?? null,
+        seriesId: raw.seriesId ?? null,
+        series: raw.series ? { id: raw.series.id, name: raw.series.name, imageUrl: raw.series.imageUrl ?? null } : null,
+        times: (raw.times ?? []).map((t: Record<string, unknown>) => ({
+          id: t.id as string, label: t.label as string,
+          startTime: (t.startTime as string | null) ?? null,
+          order: t.order as number,
+          items: ((t.items ?? []) as Record<string, unknown>[]).map((it) => ({
+            id: it.id as string, type: it.type as ProgramItemType,
+            order: it.order as number, name: (it.name as string | null) ?? null,
+            notes: (it.notes as string | null) ?? null,
+            sermonPassage: (it.sermonPassage as string | null) ?? null,
+            song: it.song ? {
+              id: (it.song as Record<string, string>).id,
+              title: (it.song as Record<string, string>).title,
+              author: (it.song as Record<string, string>).author ?? null,
+            } : null,
+            arrangement: it.arrangement ? {
+              id: (it.arrangement as Record<string, string>).id,
+              name: (it.arrangement as Record<string, string>).name,
+            } : null,
+            syncGroupId: (it.syncGroupId as string | null) ?? null,
+          })),
+        })),
+        teams: (raw.teams ?? []).map((t: Record<string, unknown>) => ({
+          id: t.id as string,
+          team: { id: (t.team as Record<string, string>).id, name: (t.team as Record<string, string>).name },
+          serviceTimeId: (t.serviceTimeId as string | null) ?? null,
+          slots: ((t.slots ?? []) as Record<string, unknown>[]).map((sl) => ({
+            id: sl.id as string,
+            role: {
+              id: ((sl.role as Record<string, unknown>).id) as string,
+              name: ((sl.role as Record<string, unknown>).name) as string,
+              needed: (((sl.role as Record<string, unknown>).needed) as number) ?? 1,
+            },
+            user: sl.user ? {
+              id: ((sl.user as Record<string, string>).id),
+              name: ((sl.user as Record<string, string>).name),
+              email: ((sl.user as Record<string, string>).email),
+            } : null,
+            status: sl.status as string,
+            rehearsal: (sl.rehearsal as boolean) ?? false,
+            notes: (sl.notes as string | null) ?? null,
+          })),
+        })),
+        scheduleEntries: (raw.scheduleEntries ?? []).map((e: Record<string, unknown>) => ({
+          id: e.id as string, label: e.label as string,
+          startTime: (e.startTime as string | null) ?? null,
+          order: e.order as number,
+        })),
+      }
+      setServices((prev) => [...prev, svc])
+      setAddServiceList((prev) => prev.filter((s) => s.id !== serviceId))
+      setAddServiceOpen(false)
+      setAddServiceSearch("")
+      const dateStr = new Date(svc.date).toISOString().split("T")[0]
+      if (!availabilityMap.has(dateStr)) {
+        fetch(`/api/availability?date=${dateStr}`)
+          .then((r) => r.json())
+          .then((list: { userId: string }[]) =>
+            setAvailabilityMap((prev) => new Map([...prev, [dateStr, new Set(list.map((a) => a.userId))]]))
+          )
+          .catch(() => {})
+      }
+      toast.success("Service added to grid")
+    } finally {
+      setAddingServiceId(null)
+    }
+  }
+
   // Active series for the picker
   const activeService = services.find((s) => s.id === activeSeriesServiceId)
   const activeSeriesId = activeService?.seriesId ?? ""
 
+  // ── Layout computations ──────────────────────────────────────────────────────
+
+  // Max number of service times across all services (determines program row count)
+  const maxTimes = services.reduce((m, s) => Math.max(m, s.times.length), 0)
+
+  // Ordered list of unique team IDs present in any service (includes time-specific teams)
+  const allTeamIds: string[] = []
+  const seenTeamIds = new Set<string>()
+  for (const svc of services) {
+    for (const st of svc.teams) {
+      if (!seenTeamIds.has(st.team.id)) {
+        seenTeamIds.add(st.team.id)
+        allTeamIds.push(st.team.id)
+      }
+    }
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
+    <div className="space-y-4">
+
+      {/* ── Page title row with Add service button ── */}
+      <div className="flex items-center gap-3">
+        <Link
+          href="/mychurch/services"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Services
+        </Link>
+        <span className="text-muted-foreground">/</span>
+        <h1 className="text-xl font-bold">{category.name} — Grid</h1>
+        <span className="text-sm text-muted-foreground">({services.length} service{services.length !== 1 ? "s" : ""})</span>
+        <div className="ml-auto">
+          <button
+            type="button"
+            onClick={openAddService}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border bg-card hover:bg-accent/50 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add service
+          </button>
+        </div>
+      </div>
+
     <div className="overflow-x-auto pb-6">
       {/* Hidden file input for artwork uploads */}
       <input
@@ -523,39 +670,347 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
         }}
       />
 
-      <div className="flex gap-3 min-w-max items-start">
-        {services.map((service) => (
-          <ServiceColumn
-            key={service.id}
-            service={service}
-            seriesList={seriesList}
-            allTeams={allTeams}
-            allTemplates={allTemplates}
-            dragOver={dragOver}
-            availabilityMap={availabilityMap}
-            neededMap={neededMap}
-            templateImportOpen={!!templateImportOpen[service.id]}
-            selectedTemplateId={selectedTemplateId[service.id] ?? ""}
-            importing={!!importing[service.id]}
-            onOpenSeriesPicker={() => openSeriesPicker(service.id)}
-            onOpenTemplateImport={() => setTemplateImportOpen((prev) => ({ ...prev, [service.id]: true }))}
-            onCloseTemplateImport={() => setTemplateImportOpen((prev) => ({ ...prev, [service.id]: false }))}
-            onSelectTemplate={(id) => setSelectedTemplateId((prev) => ({ ...prev, [service.id]: id }))}
-            onImportTemplate={() => importTemplate(service.id)}
-            onItemDragStart={(e, item, timeId) => handleItemDragStart(e, item, service.id, timeId)}
-            onSlotDragStart={(e, slot, st) => handleSlotDragStart(e, slot, st, service.id)}
-            onDragOver={(e, timeId, roleId) => handleDragOver(e, service.id, timeId, roleId)}
-            onDragLeave={handleDragLeave}
-            onDropOnTime={(e, timeId) => handleDropOnTime(e, service.id, timeId)}
-            onDropOnRole={(e, stId, roleId) => handleDropOnRole(e, service.id, stId, roleId)}
-            onOpenRolePicker={(role, st, members) =>
-              setRolePickerDialog({ role, st, serviceId: service.id, members })
-            }
-            onUpdateNeeded={updateNeeded}
-            onAddTeam={(teamId) => addTeam(service.id, teamId)}
-          />
-        ))}
+      {/* ── Service grid table ── */}
+      <div className="inline-block min-w-max border rounded-lg overflow-hidden">
+
+        {/* ── Header row ── */}
+        <div className="flex sticky top-0 z-10 border-b bg-card">
+          {services.map((svc, si) => {
+            const dateLabel = new Date(svc.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
+            const currentSeries = seriesList.find((s) => s.id === svc.seriesId) ?? null
+            return (
+              <div key={svc.id} className={`w-72 shrink-0 px-3 pt-3 pb-2 space-y-2 bg-card${si < services.length - 1 ? " border-r" : ""}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">{dateLabel}</p>
+                    <p className="text-sm font-semibold truncate leading-tight mt-0.5">
+                      {svc.title || <span className="text-muted-foreground italic">Untitled</span>}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Link
+                      href={`/mychurch/services/${svc.id}`}
+                      title="Open full planner"
+                      className="h-7 w-7 inline-flex items-center justify-center rounded border bg-card hover:bg-accent/50 text-muted-foreground"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => removeService(svc.id)}
+                      title="Remove from grid"
+                      className="h-7 w-7 inline-flex items-center justify-center rounded border bg-card hover:bg-red-50 hover:border-red-200 text-muted-foreground hover:text-red-500 transition-colors"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openSeriesPicker(svc.id)}
+                  className="w-full flex items-center gap-2 py-1 px-1.5 rounded hover:bg-accent/50 transition-colors text-left group"
+                >
+                  {currentSeries?.imageUrl ? (
+                    <img src={currentSeries.imageUrl} className="w-6 h-6 rounded object-cover shrink-0" alt={currentSeries.name} />
+                  ) : (
+                    <div className="w-6 h-6 rounded bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center shrink-0">
+                      {currentSeries ? (
+                        <span className="text-[10px] font-bold text-purple-400">{currentSeries.name[0]?.toUpperCase()}</span>
+                      ) : (
+                        <Layers className="h-3 w-3 text-purple-300" />
+                      )}
+                    </div>
+                  )}
+                  <span className="text-xs text-muted-foreground truncate flex-1">
+                    {currentSeries?.name ?? "No series"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTemplateImportOpen((prev) => ({ ...prev, [svc.id]: true }))}
+                  className="w-full flex items-center gap-1.5 py-1 px-1.5 rounded text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+                >
+                  <LayoutTemplate className="h-3.5 w-3.5 shrink-0" />
+                  Import Template
+                </button>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* ── Program Order section label ── */}
+        <div className="flex border-b bg-muted/30">
+          {services.map((svc, si) => (
+            <div key={svc.id} className={`w-72 shrink-0 px-3 py-1.5${si < services.length - 1 ? " border-r" : ""}`}>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Program Order</p>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Program time rows (one per time index, height equalised across all services) ── */}
+        {maxTimes === 0 ? (
+          <div className="flex border-b">
+            {services.map((svc, si) => (
+              <div key={svc.id} className={`w-72 shrink-0 px-3 py-3${si < services.length - 1 ? " border-r" : ""}`}>
+                <p className="text-xs text-muted-foreground text-center py-1">No service times</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          Array.from({ length: maxTimes }).map((_, timeIdx) => (
+            <div key={timeIdx} className="flex border-b">
+              {services.map((svc, si) => {
+                const time = svc.times[timeIdx]
+                const isTimeDropTarget = !!time && dragOver?.serviceId === svc.id && dragOver?.timeId === time.id
+                return (
+                  <div key={svc.id} className={`w-72 shrink-0 px-3 py-2${si < services.length - 1 ? " border-r" : ""}`}>
+                    {time ? (
+                      <>
+                        {svc.times.length > 1 && (
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">
+                            {time.label}{time.startTime ? ` · ${time.startTime}` : ""}
+                          </p>
+                        )}
+                        {time.items.map((item) => (
+                          <div
+                            key={item.id}
+                            draggable
+                            onDragStart={(e) => handleItemDragStart(e, item, svc.id, time.id)}
+                            className="flex items-center gap-1.5 py-1 px-1 rounded cursor-grab hover:bg-accent/50 group/item"
+                          >
+                            <span className={`text-[10px] px-1 py-0.5 rounded font-medium shrink-0 ${TYPE_COLORS[item.type]}`}>
+                              {TYPE_LABELS[item.type]}
+                            </span>
+                            <span className="text-xs truncate flex-1">
+                              {item.type === "SONG"
+                                ? (item.song?.title ?? item.name ?? "—")
+                                : (item.name ?? <span className="text-muted-foreground italic">—</span>)
+                              }
+                            </span>
+                          </div>
+                        ))}
+                        <div
+                          onDragOver={(e) => handleDragOver(e, svc.id, time.id)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDropOnTime(e, svc.id, time.id)}
+                          className={`mt-1 h-8 rounded border-2 border-dashed flex items-center justify-center text-[10px] text-muted-foreground transition-colors ${
+                            isTimeDropTarget
+                              ? "border-primary bg-primary/5 text-primary"
+                              : "border-transparent hover:border-muted-foreground/20"
+                          }`}
+                        >
+                          {isTimeDropTarget ? "Drop to copy" : ""}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          ))
+        )}
+
+        {/* ── Teams section label ── */}
+        <div className="flex border-b bg-muted/30">
+          {services.map((svc, si) => (
+            <div key={svc.id} className={`w-72 shrink-0 px-3 py-1.5${si < services.length - 1 ? " border-r" : ""}`}>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Teams</p>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Team rows (one per unique team, height equalised across all services) ── */}
+        {allTeamIds.length === 0 && (
+          <div className="flex border-b">
+            {services.map((svc, si) => (
+              <div key={svc.id} className={`w-72 shrink-0 px-3 py-4 text-center${si < services.length - 1 ? " border-r" : ""}`}>
+                <p className="text-xs text-muted-foreground">No teams added</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-0.5">Use the dropdown below to add a team</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {allTeamIds.map((teamId) => {
+          const teamDef = allTeams.find((t) => t.id === teamId)
+          if (!teamDef) return null
+          return (
+            <div key={teamId} className="flex border-b">
+              {services.map((svc, si) => {
+                const sts = svc.teams.filter((t) => t.team.id === teamId)
+                const st = sts[0] ?? null
+                const members = teamDef.members
+                return (
+                  <div key={svc.id} className={`w-72 shrink-0 px-3 py-2${si < services.length - 1 ? " border-r" : ""}`}>
+                    {st ? (
+                      <div>
+                        <p className="text-xs font-medium mb-2">{st.team.name}</p>
+                        {teamDef.roles.map((role) => {
+                          const slots = sts.flatMap((s) => s.slots).filter((s) => s.role.id === role.id && s.user !== null)
+                          const filledUserIds = slots.map((s) => s.user!.id)
+                          const available = members.filter((m) => !filledUserIds.includes(m.user.id))
+                          const roleNeeded = neededMap[role.id] ?? role.needed
+                          const stillNeeded = Math.max(0, roleNeeded - slots.length)
+                          const isRoleDropTarget = dragOver?.serviceId === svc.id && dragOver?.roleId === role.id
+                          return (
+                            <div key={role.id} className="mb-3 last:mb-0">
+                              <div className="group/role flex items-center gap-1 mb-1">
+                                <p className="text-[10px] text-muted-foreground">{role.name}</p>
+                                <div className="flex items-center gap-0.5 ml-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateNeeded(role.id, Math.max(0, roleNeeded - 1))}
+                                    className="h-3.5 w-3.5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent leading-none opacity-0 group-hover/role:opacity-100 transition-opacity text-[11px]"
+                                  >−</button>
+                                  <span className="text-[10px] w-3.5 text-center tabular-nums text-muted-foreground/30 group-hover/role:text-muted-foreground transition-colors">{roleNeeded}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateNeeded(role.id, roleNeeded + 1)}
+                                    className="h-3.5 w-3.5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent leading-none opacity-0 group-hover/role:opacity-100 transition-opacity text-[11px]"
+                                  >+</button>
+                                </div>
+                                {stillNeeded > 0 && (
+                                  <span className="text-[10px] text-orange-600 font-medium ml-0.5">{stillNeeded} needed</span>
+                                )}
+                              </div>
+                              <div
+                                onDragOver={(e) => handleDragOver(e, svc.id, undefined, role.id)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDropOnRole(e, svc.id, st.id, role.id)}
+                                className={`flex flex-wrap gap-1.5 min-h-[2rem] p-1 rounded border-2 border-dashed transition-colors ${
+                                  isRoleDropTarget
+                                    ? "border-blue-400 bg-blue-50"
+                                    : "border-transparent hover:border-muted-foreground/10"
+                                }`}
+                              >
+                                {slots.map((slot) => {
+                                  const statusRing = ({
+                                    CONFIRMED: "ring-green-400",
+                                    DECLINED: "ring-red-400",
+                                    PENDING: "ring-yellow-300",
+                                  } as Record<string, string>)[slot.status] ?? "ring-yellow-300"
+                                  return (
+                                    <div
+                                      key={slot.id}
+                                      draggable
+                                      onDragStart={(e) => handleSlotDragStart(e, slot, st, svc.id)}
+                                      className="flex flex-col items-center gap-0.5 cursor-grab"
+                                      title={slot.user!.name}
+                                    >
+                                      <div className={`w-7 h-7 rounded-full bg-secondary ring-2 ${statusRing} flex items-center justify-center text-[10px] font-semibold`}>
+                                        {getInitials(slot.user!.name)}
+                                      </div>
+                                      <span className="text-[9px] text-muted-foreground leading-none max-w-[32px] truncate text-center">
+                                        {slot.user!.name.split(" ")[0]}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                                {Array.from({ length: stillNeeded }).map((_, i) => (
+                                  <button
+                                    key={`empty-${i}`}
+                                    type="button"
+                                    onClick={() => setRolePickerDialog({ role, st, serviceId: svc.id, members })}
+                                    title={`Assign ${role.name}`}
+                                    className="w-7 h-7 rounded-full border-2 border-dashed border-muted-foreground/30 hover:border-primary hover:bg-primary/5 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </button>
+                                ))}
+                                {stillNeeded === 0 && available.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRolePickerDialog({ role, st, serviceId: svc.id, members })}
+                                    title={`Add extra ${role.name}`}
+                                    className="w-6 h-6 rounded-full border border-dashed border-muted-foreground/20 hover:border-muted-foreground/50 flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                                  >
+                                    <Plus className="h-2.5 w-2.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+
+        {/* ── Add team row ── */}
+        <div className="flex">
+          {services.map((svc, si) => {
+            const addableTeams = allTeams.filter(
+              (t) => !svc.teams.some((st) => st.team.id === t.id)
+            )
+            return (
+              <div key={svc.id} className={`w-72 shrink-0 px-3 py-2${si < services.length - 1 ? " border-r" : ""}`}>
+                {addableTeams.length > 0 && (
+                  <Select
+                    key={`add-team-${svc.id}-${svc.teams.length}`}
+                    onValueChange={(teamId) => addTeam(svc.id, teamId)}
+                  >
+                    <SelectTrigger className="h-7 w-full text-xs border-dashed">
+                      <SelectValue placeholder="+ Add team…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {addableTeams.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
       </div>
+
+      {/* ── Template import dialogs (per service) ── */}
+      {services.map((svc) => (
+        <Dialog
+          key={svc.id}
+          open={!!templateImportOpen[svc.id]}
+          onOpenChange={(o) => { if (!o) setTemplateImportOpen((prev) => ({ ...prev, [svc.id]: false })) }}
+        >
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Import Template</DialogTitle>
+              <p className="text-xs text-muted-foreground pt-0.5">
+                {svc.title || new Date(svc.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })}
+              </p>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Select
+                value={selectedTemplateId[svc.id] ?? ""}
+                onValueChange={(id) => setSelectedTemplateId((prev) => ({ ...prev, [svc.id]: id }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Choose a template…" /></SelectTrigger>
+                <SelectContent>
+                  {allTemplates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setTemplateImportOpen((prev) => ({ ...prev, [svc.id]: false }))}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => importTemplate(svc.id)}
+                  disabled={!selectedTemplateId[svc.id] || !!importing[svc.id]}
+                >
+                  {importing[svc.id] ? "Importing…" : "Import"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ))}
 
       {/* ── Series picker dialog ────────────────────────────────────────────── */}
       <Dialog
@@ -649,7 +1104,7 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
                   {others.map((s) => (
                     <div key={s.id} className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">
-                        {new Date(s.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                        {new Date(s.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                       </span>
                       {s.title && <span className="text-xs font-medium">· {s.title}</span>}
                     </div>
@@ -692,7 +1147,7 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
               const svc = services.find((s) => s.id === rolePickerDialog.serviceId)
               return svc ? (
                 <p className="text-xs text-muted-foreground pt-0.5">
-                  {new Date(svc.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                  {new Date(svc.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" })}
                 </p>
               ) : null
             })()}
@@ -788,352 +1243,68 @@ export default function ServiceMatrix({ services: initServices, allTeams, allSer
           )}
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
 
-// ── ServiceColumn ─────────────────────────────────────────────────────────────
-
-interface ColumnProps {
-  service: MatrixService
-  seriesList: Series[]
-  allTeams: TeamDef[]
-  allTemplates: Template[]
-  dragOver: { serviceId: string; timeId?: string; roleId?: string } | null
-  availabilityMap: Map<string, Set<string>>
-  neededMap: Record<string, number>
-  templateImportOpen: boolean
-  selectedTemplateId: string
-  importing: boolean
-  onOpenSeriesPicker: () => void
-  onOpenTemplateImport: () => void
-  onCloseTemplateImport: () => void
-  onSelectTemplate: (id: string) => void
-  onImportTemplate: () => void
-  onItemDragStart: (e: React.DragEvent, item: ProgramItem, timeId: string) => void
-  onSlotDragStart: (e: React.DragEvent, slot: Slot, st: ServiceTeam) => void
-  onDragOver: (e: React.DragEvent, timeId?: string, roleId?: string) => void
-  onDragLeave: (e: React.DragEvent) => void
-  onDropOnTime: (e: React.DragEvent, timeId: string) => void
-  onDropOnRole: (e: React.DragEvent, stId: string, roleId: string) => void
-  onOpenRolePicker: (role: Role, st: ServiceTeam, members: { user: User }[]) => void
-  onUpdateNeeded: (roleId: string, needed: number) => void
-  onAddTeam: (teamId: string) => void
-}
-
-function ServiceColumn({
-  service,
-  seriesList,
-  allTeams,
-  allTemplates,
-  dragOver,
-  neededMap,
-  templateImportOpen,
-  selectedTemplateId,
-  importing,
-  onOpenSeriesPicker,
-  onOpenTemplateImport,
-  onCloseTemplateImport,
-  onSelectTemplate,
-  onImportTemplate,
-  onItemDragStart,
-  onSlotDragStart,
-  onDragOver,
-  onDragLeave,
-  onDropOnTime,
-  onDropOnRole,
-  onOpenRolePicker,
-  onUpdateNeeded,
-  onAddTeam,
-}: ColumnProps) {
-  const currentSeries = seriesList.find((s) => s.id === service.seriesId) ?? service.series
-
-  const dateObj = new Date(service.date)
-  const dateLabel = dateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
-
-  return (
-    <div className="w-72 flex-shrink-0 flex flex-col bg-card border rounded-lg overflow-hidden">
-      {/* ── Sticky header ─────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 bg-card border-b px-3 pt-3 pb-2 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-xs text-muted-foreground">{dateLabel}</p>
-            <p className="text-sm font-semibold truncate leading-tight mt-0.5">
-              {service.title || <span className="text-muted-foreground italic">Untitled</span>}
-            </p>
-          </div>
-          <Link
-            href={`/mychurch/services/${service.id}`}
-            title="Open full planner"
-            className="shrink-0 h-7 w-7 inline-flex items-center justify-center rounded border bg-card hover:bg-accent/50 text-muted-foreground"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-
-        {/* Series row */}
-        <button
-          type="button"
-          onClick={onOpenSeriesPicker}
-          className="w-full flex items-center gap-2 py-1 px-1.5 rounded hover:bg-accent/50 transition-colors text-left group"
-        >
-          {currentSeries?.imageUrl ? (
-            <img
-              src={currentSeries.imageUrl}
-              className="w-6 h-6 rounded object-cover shrink-0"
-              alt={currentSeries.name}
-            />
-          ) : (
-            <div className="w-6 h-6 rounded bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center shrink-0">
-              {currentSeries ? (
-                <span className="text-[10px] font-bold text-purple-400">{currentSeries.name[0]?.toUpperCase()}</span>
-              ) : (
-                <Layers className="h-3 w-3 text-purple-300" />
-              )}
-            </div>
-          )}
-          <span className="text-xs text-muted-foreground truncate flex-1">
-            {currentSeries?.name ?? "No series"}
-          </span>
-        </button>
-
-        {/* Import template button */}
-        <button
-          type="button"
-          onClick={onOpenTemplateImport}
-          className="w-full flex items-center gap-1.5 py-1 px-1.5 rounded text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-        >
-          <LayoutTemplate className="h-3.5 w-3.5 shrink-0" />
-          Import Template
-        </button>
-      </div>
-
-      {/* ── Program order ──────────────────────────────────────────────────── */}
-      <div className="px-3 pt-3 pb-2">
-        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Program Order</p>
-
-        {service.times.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-2 text-center">No service times</p>
-        ) : (
-          service.times.map((time) => {
-            const isTimeDropTarget = dragOver?.serviceId === service.id && dragOver?.timeId === time.id
-
-            return (
-              <div key={time.id} className="mb-3">
-                {service.times.length > 1 && (
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">
-                    {time.label}{time.startTime ? ` · ${time.startTime}` : ""}
-                  </p>
-                )}
-
-                {/* Items */}
-                {time.items.map((item) => (
-                  <div
-                    key={item.id}
-                    draggable
-                    onDragStart={(e) => onItemDragStart(e, item, time.id)}
-                    className="flex items-center gap-1.5 py-1 px-1 rounded cursor-grab hover:bg-accent/50 group/item"
-                  >
-                    <span className={`text-[10px] px-1 py-0.5 rounded font-medium shrink-0 ${TYPE_COLORS[item.type]}`}>
-                      {TYPE_LABELS[item.type]}
-                    </span>
-                    <span className="text-xs truncate flex-1">
-                      {item.type === "SONG"
-                        ? (item.song?.title ?? item.name ?? "—")
-                        : (item.name ?? <span className="text-muted-foreground italic">—</span>)
-                      }
-                    </span>
-                  </div>
-                ))}
-
-                {/* Drop zone */}
-                <div
-                  onDragOver={(e) => onDragOver(e, time.id)}
-                  onDragLeave={onDragLeave}
-                  onDrop={(e) => onDropOnTime(e, time.id)}
-                  className={`mt-1 h-8 rounded border-2 border-dashed flex items-center justify-center text-[10px] text-muted-foreground transition-colors ${
-                    isTimeDropTarget
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-transparent hover:border-muted-foreground/20"
-                  }`}
-                >
-                  {isTimeDropTarget ? "Drop to copy" : ""}
-                </div>
-              </div>
-            )
-          })
-        )}
-      </div>
-
-      {/* ── Teams ──────────────────────────────────────────────────────────── */}
-      <div className="border-t px-3 pt-3 pb-3">
-        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Teams</p>
-
-        {service.teams.map((st) => {
-          const teamDef = allTeams.find((t) => t.id === st.team.id)
-          const allRoles = teamDef?.roles ?? []
-          const members = teamDef?.members ?? []
-
-          return (
-            <div key={st.id} className="mb-4 last:mb-0">
-              <p className="text-xs font-medium mb-2">{st.team.name}</p>
-
-              {allRoles.map((role) => {
-                const slots = st.slots.filter((s) => s.role.id === role.id && s.user !== null)
-                const filledUserIds = slots.map((s) => s.user!.id)
-                const available = members.filter((m) => !filledUserIds.includes(m.user.id))
-                const roleNeeded = neededMap[role.id] ?? role.needed
-                const stillNeeded = Math.max(0, roleNeeded - slots.length)
-                const isRoleDropTarget = dragOver?.serviceId === service.id && dragOver?.roleId === role.id
-
-                return (
-                  <div key={role.id} className="mb-3 last:mb-0">
-                    {/* Role name + needed controls */}
-                    <div className="group/role flex items-center gap-1 mb-1">
-                      <p className="text-[10px] text-muted-foreground">{role.name}</p>
-                      <div className="flex items-center gap-0.5 ml-0.5">
-                        <button
-                          type="button"
-                          onClick={() => onUpdateNeeded(role.id, Math.max(0, roleNeeded - 1))}
-                          className="h-3.5 w-3.5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent leading-none opacity-0 group-hover/role:opacity-100 transition-opacity text-[11px]"
-                        >−</button>
-                        <span className="text-[10px] w-3.5 text-center tabular-nums text-muted-foreground/30 group-hover/role:text-muted-foreground transition-colors">{roleNeeded}</span>
-                        <button
-                          type="button"
-                          onClick={() => onUpdateNeeded(role.id, roleNeeded + 1)}
-                          className="h-3.5 w-3.5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent leading-none opacity-0 group-hover/role:opacity-100 transition-opacity text-[11px]"
-                        >+</button>
-                      </div>
-                      {stillNeeded > 0 && (
-                        <span className="text-[10px] text-orange-600 font-medium ml-0.5">{stillNeeded} needed</span>
-                      )}
-                    </div>
-
-                    {/* Slot avatars drop zone */}
-                    <div
-                      onDragOver={(e) => onDragOver(e, undefined, role.id)}
-                      onDragLeave={onDragLeave}
-                      onDrop={(e) => onDropOnRole(e, st.id, role.id)}
-                      className={`flex flex-wrap gap-1.5 min-h-[2rem] p-1 rounded border-2 border-dashed transition-colors ${
-                        isRoleDropTarget
-                          ? "border-blue-400 bg-blue-50"
-                          : "border-transparent hover:border-muted-foreground/10"
-                      }`}
-                    >
-                      {/* Filled slots */}
-                      {slots.map((slot) => {
-                        const statusRing = ({
-                          CONFIRMED: "ring-green-400",
-                          DECLINED: "ring-red-400",
-                          PENDING: "ring-yellow-300",
-                        } as Record<string, string>)[slot.status] ?? "ring-yellow-300"
-                        return (
-                          <div
-                            key={slot.id}
-                            draggable
-                            onDragStart={(e) => onSlotDragStart(e, slot, st)}
-                            className="flex flex-col items-center gap-0.5 cursor-grab"
-                            title={slot.user!.name}
-                          >
-                            <div className={`w-7 h-7 rounded-full bg-secondary ring-2 ${statusRing} flex items-center justify-center text-[10px] font-semibold`}>
-                              {getInitials(slot.user!.name)}
-                            </div>
-                            <span className="text-[9px] text-muted-foreground leading-none max-w-[32px] truncate text-center">
-                              {slot.user!.name.split(" ")[0]}
-                            </span>
-                          </div>
-                        )
-                      })}
-
-                      {/* Empty circles */}
-                      {Array.from({ length: stillNeeded }).map((_, i) => (
-                        <button
-                          key={`empty-${i}`}
-                          type="button"
-                          onClick={() => onOpenRolePicker(role, st, members)}
-                          title={`Assign ${role.name}`}
-                          className="w-7 h-7 rounded-full border-2 border-dashed border-muted-foreground/30 hover:border-primary hover:bg-primary/5 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
-                        >
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      ))}
-
-                      {/* Extra "+" when fully staffed */}
-                      {stillNeeded === 0 && available.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => onOpenRolePicker(role, st, members)}
-                          title={`Add extra ${role.name}`}
-                          className="w-6 h-6 rounded-full border border-dashed border-muted-foreground/20 hover:border-muted-foreground/50 flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-                        >
-                          <Plus className="h-2.5 w-2.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )
-        })}
-
-        {/* Add team dropdown */}
-        {(() => {
-          const addableTeams = allTeams.filter(
-            (t) => !service.teams.some((st) => st.team.id === t.id && st.serviceTimeId === null)
-          )
-          if (addableTeams.length === 0) return null
-          return (
-            <Select
-              key={`add-team-${service.id}-${service.teams.length}`}
-              onValueChange={(teamId) => onAddTeam(teamId)}
-            >
-              <SelectTrigger className="h-7 w-full text-xs border-dashed mt-2">
-                <SelectValue placeholder="+ Add team…" />
-              </SelectTrigger>
-              <SelectContent>
-                {addableTeams.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )
-        })()}
-      </div>
-
-      {/* ── Template import dialog (per-column) ────────────────────────────── */}
-      <Dialog open={templateImportOpen} onOpenChange={(o) => { if (!o) onCloseTemplateImport() }}>
-        <DialogContent className="max-w-sm">
+      {/* ── Add service dialog ── */}
+      <Dialog open={addServiceOpen} onOpenChange={(o) => { if (!o) { setAddServiceOpen(false); setAddServiceSearch("") } }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Import Template</DialogTitle>
-            <p className="text-xs text-muted-foreground pt-0.5">
-              {service.title || dateLabel}
-            </p>
+            <DialogTitle>Add Service to Grid</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <Select value={selectedTemplateId} onValueChange={onSelectTemplate}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a template…" />
-              </SelectTrigger>
-              <SelectContent>
-                {allTemplates.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={onCloseTemplateImport}>Cancel</Button>
-              <Button
-                size="sm"
-                onClick={onImportTemplate}
-                disabled={!selectedTemplateId || importing}
-              >
-                {importing ? "Importing…" : "Import"}
-              </Button>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search services…"
+                value={addServiceSearch}
+                onChange={(e) => setAddServiceSearch(e.target.value)}
+                className="pl-8 h-8 text-sm"
+                autoFocus
+              />
             </div>
+            {addServiceLoading ? (
+              <p className="text-sm text-muted-foreground text-center py-6">Loading services…</p>
+            ) : (
+              <div className="max-h-80 overflow-y-auto space-y-1 -mx-1 px-1">
+                {(() => {
+                  const filtered = addServiceList.filter((s) => {
+                    const q = addServiceSearch.toLowerCase()
+                    return !q || s.title.toLowerCase().includes(q) ||
+                      (s.categoryName ?? "").toLowerCase().includes(q) ||
+                      new Date(s.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).toLowerCase().includes(q)
+                  })
+                  if (filtered.length === 0) {
+                    return <p className="text-sm text-muted-foreground text-center py-6">No services found</p>
+                  }
+                  return filtered.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => handleAddService(s.id)}
+                      disabled={addingServiceId === s.id}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-accent/50 transition-colors disabled:opacity-60"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{s.title || <span className="text-muted-foreground italic">Untitled</span>}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {new Date(s.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
+                          {s.categoryName && <span className="ml-1.5">· {s.categoryName}</span>}
+                        </p>
+                      </div>
+                      {addingServiceId === s.id
+                        ? <span className="text-xs text-muted-foreground shrink-0">Adding…</span>
+                        : <Plus className="h-4 w-4 text-muted-foreground shrink-0" />
+                      }
+                    </button>
+                  ))
+                })()}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
     </div>
+    </div>
   )
 }
+
+// (ServiceColumn removed — rendering is now inlined as row-based grid)

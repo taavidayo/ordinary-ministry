@@ -77,7 +77,7 @@ export default async function ChatPage() {
   }))
 
   return (
-    <div className="-m-6 h-[calc(100vh-0px)] flex overflow-hidden">
+    <div className="-m-6 h-[calc(100vh-44px)] flex overflow-hidden">
       <ChatLayout
         channels={channelList}
         archivedChannels={archivedList}

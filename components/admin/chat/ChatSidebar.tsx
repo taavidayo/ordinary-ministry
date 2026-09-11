@@ -3,6 +3,7 @@
 import { useState, useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import {
   Hash,
@@ -18,6 +19,8 @@ import {
   FolderPlus,
   Archive,
   ArchiveRestore,
+  LogOut,
+  PanelLeftClose,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,6 +50,7 @@ interface Props {
   onCategoryDeleted: (id: string) => void
   onChannelUnarchived: (id: string) => void
   onChannelReordered: (orderedIds: string[], categoryId: string | null) => void
+  onCollapse?: () => void
 }
 
 function DefaultChannelIcon({ type }: { type: ChannelSummary["type"] }) {
@@ -342,6 +346,7 @@ export default function ChatSidebar({
   onCategoryDeleted,
   onChannelUnarchived,
   onChannelReordered,
+  onCollapse,
 }: Props) {
   const router = useRouter()
   const [createOpen, setCreateOpen] = useState(false)
@@ -519,6 +524,11 @@ export default function ChatSidebar({
           <Button variant="ghost" size="icon" className="h-6 w-6" title="New channel" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" />
           </Button>
+          {onCollapse && (
+            <Button variant="ghost" size="icon" className="h-6 w-6" title="Collapse sidebar" onClick={onCollapse}>
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -638,6 +648,16 @@ export default function ChatSidebar({
             )}
           </div>
         )}
+      </div>
+
+      <div className="border-t p-2">
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="flex items-center gap-2 py-1.5 px-2 w-full rounded text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        >
+          <LogOut className="h-3.5 w-3.5 shrink-0" />
+          Sign out
+        </button>
       </div>
 
       <CreateChannelDialog

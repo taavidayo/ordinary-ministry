@@ -35,7 +35,7 @@ export default function ChecklistWidget({ teamId }: { teamId?: string }) {
         return (
           <div key={s.id} className="space-y-0.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-medium truncate flex-1">{s.title || new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+              <span className="font-medium truncate flex-1">{s.title || new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}</span>
               <span className={cn("text-[10px] font-medium ml-2", pct === 100 ? "text-green-500" : "text-muted-foreground")}>
                 {s.done}/{s.total}
               </span>
